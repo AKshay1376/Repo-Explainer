@@ -111,7 +111,11 @@ def construct_plan(plan_id: str, plan_type: str, resolved: Dict[str, Any],
         ))
 
     if plan_type == "rename_symbol":
-        add("definition", "Rename the definition", f"Rename {symbol} to {destination} in {path}; preserve its signature and behavior.")
+        private_local_preview = bool(path.endswith(".py") and symbol and symbol.startswith("_") and
+                                     affected == [path] and not evidence["string_references"] and
+                                     not evidence["routes"] and not evidence["models"])
+        add("definition", "Rename the definition", f"Rename {symbol} to {destination} in {path}; preserve its signature and behavior.",
+            auto_preview=private_local_preview)
         if evidence["exports"]:
             add("compatibility", "Preserve the old public name temporarily", "Review an alias or re-export only if callers need a transition window.",
                 prerequisites=["definition"], manual=True)

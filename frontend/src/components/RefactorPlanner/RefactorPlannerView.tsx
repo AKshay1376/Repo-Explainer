@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
+import type { PatchTrigger } from "../../types/patch"
 import { PLAN_TYPES, type PlanTrigger, type PlanType } from "../../types/refactor"
 import { useRefactorPlanner } from "../../hooks/useRefactorPlanner"
 import { PlanStepCard } from "./PlanStepCard"
@@ -13,11 +14,12 @@ interface Props {
   onOpenSource: (location: SourceLocation) => void
   onOpenImpact: (path: string) => void
   onOpenGraph: (path: string) => void
+  onCreatePatch?: (trigger: PatchTrigger) => void
 }
 
 const label = (type: PlanType) => type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 
-export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph }) => {
+export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch }) => {
   const [planType, setPlanType] = useState<PlanType>(trigger?.planType || "rename_symbol")
   const [target, setTarget] = useState(trigger?.target || "")
   const [symbol, setSymbol] = useState(String(trigger?.options?.symbol || ""))
@@ -88,7 +90,9 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
       <PlanGraph steps={plan.steps} />
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Ordered plan steps</h3>
-        {plan.steps.map((step) => <PlanStepCard key={step.id} step={step} onOpenSource={onOpenSource} onOpenImpact={onOpenImpact} onOpenGraph={onOpenGraph} />)}
+        {plan.steps.map((step) => <PlanStepCard key={step.id} step={step} onOpenSource={onOpenSource} onOpenImpact={onOpenImpact} onOpenGraph={onOpenGraph}
+          onGeneratePatch={onCreatePatch && step.can_auto_preview && plan.plan_type === "rename_symbol" && step.id === "definition"
+            ? (stepId) => onCreatePatch({ source: "planner", path: plan.target.split("::")[0], planTrigger: plannedTrigger || current(), stepId }) : undefined} />)}
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Validation plan</h3>

@@ -66,8 +66,8 @@ def _collapse_python_blank_lines(content: str) -> Optional[str]:
     return proposed if proposed != content and _ast_equivalent(content, proposed) else None
 
 
-def deterministic_previews(path: str, content: str, language: str) -> List[Dict[str, Any]]:
-    """Return individually reviewable patches. None are ever applied by this service."""
+def deterministic_candidates(content: str, language: str) -> List[Dict[str, Any]]:
+    """Return verified proposed content for the central patch engine and previews."""
     candidates = []
     if content and not content.endswith("\n"):
         proposed = content + "\n"
@@ -82,6 +82,13 @@ def deterministic_previews(path: str, content: str, language: str) -> List[Dict[
             candidates.append(("blank_lines", "Limit consecutive blank lines", "Keep at most two blank lines outside multiline strings; Python AST remains identical.", collapsed))
     return [{
         "id": identifier, "title": title, "description": description,
-        "patch": make_patch(path, content, proposed), "risk_level": "LOW",
+        "proposed": proposed, "risk_level": "LOW",
         "preserves_public_api": True, "preview_only": True,
     } for identifier, title, description, proposed in candidates if proposed != content]
+
+
+def deterministic_previews(path: str, content: str, language: str) -> List[Dict[str, Any]]:
+    """Compatibility preview; patch generation uses the same candidate source."""
+    return [{**{key: value for key, value in candidate.items() if key != "proposed"},
+             "patch": make_patch(path, content, candidate["proposed"])}
+            for candidate in deterministic_candidates(content, language)]

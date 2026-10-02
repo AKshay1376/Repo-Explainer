@@ -1,9 +1,9 @@
 import React, { useState } from "react"
 import type { HumanizePreview } from "../../types/humanize"
 
-interface PatchPreviewProps { preview: HumanizePreview; path: string }
+interface PatchPreviewProps { preview: HumanizePreview; path: string; onReview?: (suggestionId: string) => void }
 
-export const PatchPreview: React.FC<PatchPreviewProps> = ({ preview, path }) => {
+export const PatchPreview: React.FC<PatchPreviewProps> = ({ preview, path, onReview }) => {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     await navigator.clipboard.writeText(preview.patch)
@@ -25,6 +25,7 @@ export const PatchPreview: React.FC<PatchPreviewProps> = ({ preview, path }) => 
     <p className="mt-2 text-xs text-ink-tertiary">Review the patch before applying it manually. No repository files were changed.</p>
     <pre aria-label={`${preview.title} patch`} className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface p-3 text-[11px] leading-5 text-ink">{preview.patch}</pre>
     <div className="mt-3 flex gap-2">
+      {onReview && <button type="button" onClick={() => onReview(preview.id)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Open in Patch Review</button>}
       <button type="button" onClick={copy} className="rounded-lg border border-line px-3 py-1.5 text-xs text-brand">{copied ? "Copied" : "Copy patch"}</button>
       <button type="button" onClick={download} className="rounded-lg border border-line px-3 py-1.5 text-xs text-brand">Download patch</button>
     </div>

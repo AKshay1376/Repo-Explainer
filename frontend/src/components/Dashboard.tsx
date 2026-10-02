@@ -32,6 +32,7 @@ import type { TraceTrigger, ExecutionFlow } from "../types/trace"
 import type { ImpactTrigger } from "../types/impact"
 import type { SourceLocation } from "../types/source"
 import type { PlanTrigger } from "../types/refactor"
+import type { PatchTrigger } from "../types/patch"
 
 import { sourceForStep, sourceForImpact } from "../lib/sourceNavigation"
 
@@ -59,6 +60,7 @@ interface DashboardProps {
 const RefactorPlannerView = React.lazy(() => import("./RefactorPlanner/RefactorPlannerView").then((module) => ({ default: module.RefactorPlannerView })))
 const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((module) => ({ default: module.HumanizeView })))
 const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then((module) => ({ default: module.SourceViewer })))
+const PatchReviewView = React.lazy(() => import("./PatchReview/PatchReviewView").then((module) => ({ default: module.PatchReviewView })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -85,12 +87,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor">(
+  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch">(
     repository_model ? "explorer" : "report"
   )
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "explorer" : "report"]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor") => {
+  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch") => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
@@ -107,6 +109,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const openPlan = React.useCallback((trigger: PlanTrigger) => {
     setPlanTrigger({ ...trigger, requestId: Date.now() })
     navigateTab("refactor")
+  }, [navigateTab])
+  const [patchTrigger, setPatchTrigger] = useState<PatchTrigger | null>(null)
+  const openPatch = React.useCallback((trigger: PatchTrigger) => {
+    setPatchTrigger({ ...trigger, requestId: Date.now() })
+    navigateTab("patch")
   }, [navigateTab])
   const [askScope, setAskScope] = useState<AskRepoScope | undefined>(undefined)
   const [traceTrigger, setTraceTrigger] = useState<TraceTrigger | undefined>(undefined)
@@ -508,6 +515,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button onClick={() => navigateTab("refactor")} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-ink-secondary hover:text-ink"><WorkflowIcon className="h-4 w-4 text-brand" /><span>Refactor Planner</span></button>
+          <button onClick={() => navigateTab("patch")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "patch" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CodeIcon className="h-4 w-4 text-brand" /><span>Patch Review</span></button>
 
           <button
             onClick={() => navigateTab("report")}
@@ -534,7 +542,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
               canGoForward={historyIndex < history.length - 1} onClose={() => setSelectedFile(null)}
               onAskAboutFile={handleAskAboutFile} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
-              onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} onCreatePlan={openPlan} />
+              onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} />
           </div>
         </div>
       </div>}
@@ -564,20 +572,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>}
       {repository_model && visitedTabs.has("source") && <div hidden={activeTab !== "source"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading source viewer…</p>}>
-          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} />
+          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} />
         </React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("humanize") && <div hidden={activeTab !== "humanize"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Humanize…</p>}>
           <HumanizeView repoUrl={repoUrl} model={repository_model} target={humanizeTarget}
-            onOpenSource={openSource} onAnalyzeImpact={handleAnalyzeImpact} onAskRepo={handleAskAboutFile} onCreatePlan={openPlan} />
+            onOpenSource={openSource} onAnalyzeImpact={handleAnalyzeImpact} onAskRepo={handleAskAboutFile} onCreatePlan={openPlan} onCreatePatch={openPatch} />
         </React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("refactor") && <div hidden={activeTab !== "refactor"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading planner…</p>}>
           <RefactorPlannerView repoUrl={repoUrl} model={repository_model} trigger={planTrigger}
             onOpenSource={openSource} onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
-            onOpenGraph={handleShowInGraphFromAsk} />
+            onOpenGraph={handleShowInGraphFromAsk} onCreatePatch={openPatch} />
+        </React.Suspense>
+      </div>}
+      {repository_model && visitedTabs.has("patch") && <div hidden={activeTab !== "patch"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Patch Review…</p>}>
+          <PatchReviewView repoUrl={repoUrl} model={repository_model} trigger={patchTrigger}
+            onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
+            onOpenSource={(path) => openSource({ path })} />
         </React.Suspense>
       </div>}
       {activeTab === "report" && <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card"><ReportView reportMarkdown={report} /></div>}

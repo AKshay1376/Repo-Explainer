@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsx --test src/tests/inspector.test.js src/tests/graph.test.ts src/tests/ask_repo.test.ts src/tests/trace.test.ts src/tests/impact.test.ts src/tests/source.test.ts src/tests/humanize.test.ts src/tests/refactor.test.ts"
+    "test": "tsx --test src/tests/inspector.test.js src/tests/graph.test.ts src/tests/ask_repo.test.ts src/tests/trace.test.ts src/tests/impact.test.ts src/tests/source.test.ts src/tests/humanize.test.ts src/tests/refactor.test.ts src/tests/patch.test.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",

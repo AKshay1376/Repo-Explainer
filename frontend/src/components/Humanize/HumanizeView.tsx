@@ -3,6 +3,7 @@ import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
 import type { HumanizeMode } from "../../types/humanize"
 import type { PlanTrigger } from "../../types/refactor"
+import type { PatchTrigger } from "../../types/patch"
 import { useHumanize } from "../../hooks/useHumanize"
 import { FindingCard } from "./FindingCard"
 import { PatchPreview } from "./PatchPreview"
@@ -15,9 +16,10 @@ interface HumanizeViewProps {
   onAnalyzeImpact: (trigger: { file: string }) => void
   onAskRepo: (path: string) => void
   onCreatePlan?: (trigger: PlanTrigger) => void
+  onCreatePatch?: (trigger: PatchTrigger) => void
 }
 
-export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, target, onOpenSource, onAnalyzeImpact, onAskRepo, onCreatePlan }) => {
+export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, target, onOpenSource, onAnalyzeImpact, onAskRepo, onCreatePlan, onCreatePatch }) => {
   const [path, setPath] = useState(target?.path || "")
   const [mode, setMode] = useState<HumanizeMode>("Balanced")
   const [aiConsent, setAiConsent] = useState(false)
@@ -88,7 +90,7 @@ export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, targ
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Safe deterministic patch previews ({fileResult.previews.length})</h3>
-        {fileResult.previews.length ? fileResult.previews.map((preview) => <PatchPreview key={preview.id} preview={preview} path={fileResult.path} />)
+        {fileResult.previews.length ? fileResult.previews.map((preview) => <PatchPreview key={preview.id} preview={preview} path={fileResult.path} onReview={onCreatePatch ? (suggestionId) => onCreatePatch({ source: "humanize", path: fileResult.path, suggestionId }) : undefined} />)
           : <p className="text-xs text-ink-tertiary">No safe deterministic changes are available for this file.</p>}
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">

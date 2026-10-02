@@ -1,6 +1,7 @@
 import React, { useState } from "react"
 import type { SourceLocation } from "../types/source"
 import type { PlanTrigger } from "../types/refactor"
+import type { PatchTrigger } from "../types/patch"
 import type {
   FileModel,
   RepositoryModel,
@@ -42,6 +43,7 @@ interface FileInspectorProps {
   onOpenSource?: (location: SourceLocation) => void
   onHumanize?: (path: string) => void
   onCreatePlan?: (trigger: PlanTrigger) => void
+  onCreatePatch?: (trigger: PatchTrigger) => void
 }
 
 export const FileInspector: React.FC<FileInspectorProps> = ({
@@ -60,6 +62,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
   onOpenSource,
   onHumanize,
   onCreatePlan,
+  onCreatePatch,
 }) => {
   const [showEvidence, setShowEvidence] = useState(false)
   const [expandedEdges, setExpandedEdges] = useState<Record<string, boolean>>({})
@@ -173,6 +176,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
         <div className="flex items-center gap-2">
           {onCreatePlan && <button onClick={() => onCreatePlan({ planType: "move_file", target: filePath })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Plan refactor</button>}
           {onHumanize && <button onClick={() => onHumanize(filePath)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Humanize</button>}
+          {onCreatePatch && <button onClick={() => onCreatePatch({ source: "selection", path: filePath, startLine: 1, endLine: 1, transformation: "trim_trailing_whitespace" })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Create Patch</button>}
           {onOpenSource && <button onClick={() => onOpenSource({ path: filePath })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">View Source</button>}
           {onTraceFile && (
             <button

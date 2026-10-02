@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
 import type { PlanTrigger } from "../../types/refactor"
+import type { PatchTrigger } from "../../types/patch"
 import { useSourceFile } from "../../hooks/useSourceFile"
 import { findSourceMatches, githubSourceUrl, parseSourceReference, selectLineRange } from "../../lib/sourceNavigation"
 import { SourceCode } from "./SourceCode"
 import { SourceHeader } from "./SourceHeader"
 import { SourceOutline } from "./SourceOutline"
 import { SourceSearch } from "./SourceSearch"
+import { canCreatePatchFromSource } from "../../lib/patchSource"
 
 interface SourceViewerProps {
   repoUrl: string
@@ -17,11 +19,12 @@ interface SourceViewerProps {
   visible: boolean
   onHumanize?: (path: string) => void
   onCreatePlan?: (trigger: PlanTrigger) => void
+  onCreatePatch?: (trigger: PatchTrigger) => void
 }
 
 const scrollPositions = new Map<string, number>()
 
-export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, location, onNavigate, visible, onHumanize, onCreatePlan }) => {
+export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, location, onNavigate, visible, onHumanize, onCreatePlan, onCreatePatch }) => {
   const [pathInput, setPathInput] = useState("")
   const [query, setQuery] = useState("")
   const [caseSensitive, setCaseSensitive] = useState(false)
@@ -32,6 +35,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
   const lastNavigation = useRef<string>("")
   const ref = model.metadata.latest_commit_sha || model.metadata.default_branch
   const path = location?.path || null
+  const knownSymbol = model.symbols?.find((symbol) => symbol.file === path && symbol.line === location?.startLine)
   const { file, loading, error } = useSourceFile(repoUrl, path, ref)
   const matches = useMemo(() => findSourceMatches(file?.content || "", query, caseSensitive), [file?.content, query, caseSensitive])
   const matchLines = useMemo(() => new Set(matches.map((match) => match.line)), [matches])
@@ -75,6 +79,8 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
       <h2 className="mr-auto text-sm font-semibold text-ink">Source Code Viewer</h2>
       {path && file && !file.is_sensitive && !file.is_binary && onCreatePlan && <button type="button" onClick={() => onCreatePlan({ planType: "move_file", target: path })} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Plan refactor</button>}
       {path && file && !file.is_sensitive && !file.is_binary && onHumanize && <button type="button" onClick={() => onHumanize(path)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Humanize</button>}
+      {path && canCreatePatchFromSource(file) && onCreatePatch && <button type="button" onClick={() => onCreatePatch({ source: "selection", path, startLine: location?.startLine || 1, endLine: location?.endLine || location?.startLine || 1, transformation: "trim_trailing_whitespace" })} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Create Patch</button>}
+      {path && knownSymbol && canCreatePatchFromSource(file) && onCreatePatch && <button type="button" onClick={() => onCreatePatch({ source: "selection", path, startLine: knownSymbol.line || 1, endLine: knownSymbol.line || 1, transformation: "trim_trailing_whitespace" })} className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-brand">Patch symbol {knownSymbol.name}</button>}
       <form className="flex min-w-60 flex-1 gap-2 sm:max-w-xl" onSubmit={(event) => {
         event.preventDefault()
         const selected = pathInput.trim().replace(/\\/g, "/")

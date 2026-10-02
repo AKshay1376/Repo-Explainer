@@ -7,9 +7,10 @@ interface Props {
   onOpenSource: (location: SourceLocation) => void
   onOpenImpact: (path: string) => void
   onOpenGraph: (path: string) => void
+  onGeneratePatch?: (stepId: string) => void
 }
 
-export const PlanStepCard: React.FC<Props> = ({ step, onOpenSource, onOpenImpact, onOpenGraph }) => {
+export const PlanStepCard: React.FC<Props> = ({ step, onOpenSource, onOpenImpact, onOpenGraph, onGeneratePatch }) => {
   const first = step.source_locations[0]
   const path = first?.path || step.affected_files[0]
   return <article className="rounded-xl border border-line bg-surface-inset p-4 space-y-2">
@@ -24,6 +25,7 @@ export const PlanStepCard: React.FC<Props> = ({ step, onOpenSource, onOpenImpact
       {path && <button onClick={() => onOpenSource({ path, ...(first?.line ? { startLine: first.line, endLine: first.line } : {}) })} className="text-xs font-semibold text-brand">View Source</button>}
       {path && <button onClick={() => onOpenImpact(path)} className="text-xs font-semibold text-brand">View Impact</button>}
       {path && <button onClick={() => onOpenGraph(path)} className="text-xs font-semibold text-brand">View Graph</button>}
+      {onGeneratePatch && <button onClick={() => onGeneratePatch(step.id)} className="text-xs font-semibold text-brand">Generate Patch</button>}
     </div>
     {step.source_locations.length > 1 && <div className="flex flex-wrap gap-2">
       {step.source_locations.slice(1, 12).map((location, index) => <button key={`${location.path}:${location.line}:${index}`}

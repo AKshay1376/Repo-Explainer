@@ -297,6 +297,19 @@ Streams the generated Markdown report as a downloadable `.md` file attachment.
 
 ## 🔒 Security Principles
 
+### Local Patch Review (Phase 12)
+
+Patch Review is disabled until `PATCH_LOCAL_ROOT` points to the exact local checkout you intend to edit. If that folder has Git metadata, its `origin` must match the analyzed GitHub repository and `.gitignore` must exclude `.repo-explainer/` before local patch history is stored. For a folder without Git metadata, set `PATCH_REPOSITORY=owner/repo` as an explicit binding. Keep the backend on localhost; the patch endpoints reject nonlocal clients and browser origins.
+
+The workflow is **generate → review and select hunks → validate → approve → apply → inspect results → accept or rollback**. Generation is read-only. Apply requires `confirm_apply: true`; high-risk and public API changes require separate acknowledgements. Source hashes, path checks, sensitive-file checks, syntax checks, and hunk dependencies are rechecked immediately before writing. Only UTF-8 text files already present in the configured checkout are supported. `.env`, credentials, keys, token files, symlinks, `.git`, generated build directories, and secret-like source content are blocked.
+
+Before apply, exact original bytes are saved in `.repo-explainer/rollbacks/<patch-id>/`, which Git ignores. Each file is replaced atomically. A multi-file failure restores files already written. Rollback works across server restarts; if a file changed after apply, restoration stops and asks for an explicit conflict override. Patch history contains metadata, not source bytes. Git status is shown but Git is never used as the only rollback mechanism and the patch engine never commits analyzed repositories.
+
+Post-apply checks always include deterministic syntax validation where available. External repository commands never run automatically, so the result can be `PARTIAL`. For this Repo Explainer checkout only, set `PATCH_TRUSTED_VALIDATION=1` and opt in during apply to run fixed backend tests, frontend tests, TypeScript validation, and the production build. AI patch generation is optional, sends only bounded, secret-checked local source after explicit consent, and still requires the same review and apply gates.
+
+Endpoints: `POST /api/patch/generate`, `/api/patch/validate`, `/api/patch/apply`, `/api/patch/accept`, `/api/patch/reject`, `/api/patch/rollback`, `/api/patch/impact`, `/api/patch/ai-generate`; `GET /api/patch/history`, `/api/patch/<id>`. `generate` accepts one Humanize suggestion, a selected-range transformation, a supported Planner step, or an explicit group of independent changes. Groups above 20 files or 1,500 changed lines are split into separate PatchSets. Unsupported Planner migrations remain manual.
+
+
 * **Untrusted Code Execution Prevention**: Repository contents are treated strictly as data evidence. System prompts contain explicit instructions forbidding execution or compliance with instructions contained within repository files.
 * **Secret Protection**: API keys, tokens, `.env` entries, and private SSH keys are identified and redacted before prompt assembly.
 * **XSS Neutralization**: Markdown rendering strictly sanitizes link protocols and parses HTML elements safely without arbitrary JavaScript execution.

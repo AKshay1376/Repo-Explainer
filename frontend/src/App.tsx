@@ -145,7 +145,7 @@ export const App: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px] text-ink-secondary">
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
-              <span>Zero-leakage security engine: source code is treated strictly as untrusted read-only evidence.</span>
+              <span>Source stays read-only during analysis; local patches require review, validation, and explicit approval.</span>
             </div>
             <div className="text-ink-secondary">
               Built to help developers understand unfamiliar codebases faster.
@@ -161,4 +161,3 @@ export const App: React.FC = () => {
 }
 
 export default App
-

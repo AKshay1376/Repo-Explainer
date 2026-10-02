@@ -84,3 +84,6 @@ apikey.*
 
 # Additional IDE state
 .vs/
+
+# Local patch history and byte snapshots
+.repo-explainer/
