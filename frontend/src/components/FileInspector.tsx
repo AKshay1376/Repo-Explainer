@@ -39,6 +39,7 @@ interface FileInspectorProps {
   onTraceRoute?: (routeStr: string) => void
   onAnalyzeImpact?: (trigger: { file?: string; symbol?: string; route?: string }) => void
   onOpenSource?: (location: SourceLocation) => void
+  onHumanize?: (path: string) => void
 }
 
 export const FileInspector: React.FC<FileInspectorProps> = ({
@@ -55,6 +56,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
   onTraceRoute,
   onAnalyzeImpact,
   onOpenSource,
+  onHumanize,
 }) => {
   const [showEvidence, setShowEvidence] = useState(false)
   const [expandedEdges, setExpandedEdges] = useState<Record<string, boolean>>({})
@@ -166,6 +168,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onHumanize && <button onClick={() => onHumanize(filePath)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Humanize</button>}
           {onOpenSource && <button onClick={() => onOpenSource({ path: filePath })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">View Source</button>}
           {onTraceFile && (
             <button

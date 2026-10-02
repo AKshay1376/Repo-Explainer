@@ -19,6 +19,7 @@ interface ChangeImpactViewProps {
   repositoryModel?: RepositoryModel
   trigger?: ImpactTrigger | null
   onOpenSource?: (node: Pick<ImpactNode, "file" | "symbol" | "line">) => void
+  onHumanize?: (path: string) => void
   onSelectFile?: (file: string) => void
   onNavigateTab?: (tab: string) => void
   onTraceFlow?: (file: string) => void
@@ -31,6 +32,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
   trigger,
   onSelectFile,
   onOpenSource,
+  onHumanize,
   onNavigateTab,
   onTraceFlow,
   onAskRepo,
@@ -187,6 +189,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
               onSelectNode={setSelectedNode}
               onInspectFile={handleInspectFile}
               onOpenSource={onOpenSource}
+              onHumanize={onHumanize}
               onShowInGraph={handleShowInGraph}
               onTraceFlow={handleTraceFlow}
               onAnalyzeFromHere={handleAnalyzeFromHere}

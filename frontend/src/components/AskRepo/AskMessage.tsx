@@ -13,6 +13,7 @@ import { BotIcon, UserIcon, CheckCircleIcon, ChevronDownIcon, ChevronRightIcon, 
 interface AskMessageProps {
   message: AskMessageType
   onOpenSource?: (location: SourceLocation) => void
+  onHumanize?: (path: string) => void
   onInspectFile?: (filePath: string) => void
   onShowInGraph?: (filePath: string) => void
   onTraceFlow?: (candidateFiles: string[], query?: string) => void
@@ -258,6 +259,7 @@ export const AskMessage: React.FC<AskMessageProps> = ({
   message,
   onInspectFile,
   onOpenSource,
+  onHumanize,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeImpact,
@@ -377,6 +379,7 @@ export const AskMessage: React.FC<AskMessageProps> = ({
                   citation={c}
                   onInspectFile={onInspectFile}
                   onOpenSource={onOpenSource}
+                  onHumanize={onHumanize}
                   onShowInGraph={onShowInGraph}
                 />
               ))}

@@ -13,6 +13,7 @@ interface AskCitationProps {
   onInspectFile?: (filePath: string) => void
   onShowInGraph?: (filePath: string) => void
   onOpenSource?: (location: SourceLocation) => void
+  onHumanize?: (path: string) => void
 }
 
 export const AskCitation: React.FC<AskCitationProps> = ({
@@ -20,6 +21,7 @@ export const AskCitation: React.FC<AskCitationProps> = ({
   onInspectFile,
   onShowInGraph,
   onOpenSource,
+  onHumanize,
 }) => {
   const fileName = citation.file.split("/").pop() || citation.file
   const hasLine = citation.line != null
@@ -33,6 +35,7 @@ export const AskCitation: React.FC<AskCitationProps> = ({
       </span>
 
       <span className="flex items-center gap-1 ml-1 shrink-0">
+        {onHumanize && <button onClick={() => onHumanize(citation.file)} className="text-[10px] uppercase font-semibold text-brand hover:underline">Humanize</button>}
         {onOpenSource && <button onClick={() => onOpenSource({ path: citation.file, ...(citation.line ? { startLine: citation.line, endLine: citation.line } : {}) })} className="text-[10px] uppercase font-semibold text-brand hover:underline">Source</button>}
         {onInspectFile && (
           <button

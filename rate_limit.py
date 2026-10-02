@@ -17,6 +17,8 @@ RATELIMIT_ASK_DEFAULT = os.getenv("RATELIMIT_ASK", "20 per minute")
 RATELIMIT_TRACE_DEFAULT = os.getenv("RATELIMIT_TRACE", "30 per minute")
 RATELIMIT_IMPACT_DEFAULT = os.getenv("RATELIMIT_IMPACT", "30 per minute")
 RATELIMIT_SOURCE_DEFAULT = os.getenv("RATELIMIT_SOURCE", "60 per minute")
+RATELIMIT_HUMANIZE_DEFAULT = os.getenv("RATELIMIT_HUMANIZE", "30 per minute")
+RATELIMIT_HUMANIZE_AI_DEFAULT = os.getenv("RATELIMIT_HUMANIZE_AI", "5 per minute")
 
 
 def get_client_ip():
@@ -60,6 +62,16 @@ def get_impact_limit():
 def get_source_limit():
     """Dynamic limit getter for single source file retrieval."""
     return os.getenv("RATELIMIT_SOURCE", RATELIMIT_SOURCE_DEFAULT)
+
+
+def get_humanize_limit():
+    """Limit deterministic Humanize requests."""
+    return os.getenv("RATELIMIT_HUMANIZE", RATELIMIT_HUMANIZE_DEFAULT)
+
+
+def get_humanize_ai_limit():
+    """Stricter limit for explicitly requested AI previews."""
+    return os.getenv("RATELIMIT_HUMANIZE_AI", RATELIMIT_HUMANIZE_AI_DEFAULT)
 
 
 def init_limiter(app):

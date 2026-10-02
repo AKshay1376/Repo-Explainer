@@ -20,6 +20,7 @@ interface StepDetailsPanelProps {
   step: ExecutionStep | null
   onClose: () => void
   onOpenSource?: (step: ExecutionStep) => void
+  onHumanize?: (path: string) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onAskAboutStep: (step: ExecutionStep) => void
@@ -32,6 +33,7 @@ export const StepDetailsPanel: React.FC<StepDetailsPanelProps> = ({
   onClose,
   onInspectFile,
   onOpenSource,
+  onHumanize,
   onShowInGraph,
   onAskAboutStep,
   onTraceFromStep,
@@ -92,6 +94,7 @@ export const StepDetailsPanel: React.FC<StepDetailsPanelProps> = ({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-2 pt-1">
+          {onHumanize && <button onClick={() => onHumanize(step.file)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">Humanize</button>}
           {onOpenSource && <button onClick={() => onOpenSource(step)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">View Source</button>}
           <button
             onClick={() => onInspectFile(step.file)}

@@ -31,13 +31,17 @@ from rate_limit import (
     get_trace_limit,
     get_impact_limit,
     get_source_limit,
+    get_humanize_limit,
+    get_humanize_ai_limit,
 )
 from repo_qa import default_ask_service
 from execution_trace import default_trace_service
 from change_impact import ChangeImpactService
 from source_service import get_source_file
+from humanize.service import HumanizeService
 
 default_impact_service = ChangeImpactService()
+default_humanize_service = HumanizeService(default_impact_service)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -570,6 +574,84 @@ def api_source():
     except Exception as e:
         logger.exception("Error retrieving source file %s for %s/%s: %s", file_path, owner, repo, e)
         return jsonify({"success": False, "error": f"Failed to retrieve source file: {str(e)}"}), 500
+
+
+@app.route("/api/humanize", methods=["POST", "OPTIONS"])
+@limiter.limit(get_humanize_limit)
+def api_humanize():
+    """Run deterministic file analysis or a repository-wide cached-source audit."""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    github_url = (data.get("repo_url") or data.get("url") or "").strip()
+    path = data.get("path")
+    mode = data.get("mode", "Balanced")
+    ref = data.get("ref")
+    audit_only = data.get("audit_only") is True
+    if not github_url:
+        return jsonify({"success": False, "error": "Repository URL is required."}), 400
+    if mode not in ("Conservative", "Balanced", "Aggressive"):
+        return jsonify({"success": False, "error": "Invalid Humanize mode."}), 400
+    try:
+        owner, repo = validate_github_url(github_url)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    model = get_cached_repository_model(owner, repo) or data.get("repository_model") or {}
+    metadata = model.get("metadata") or {} if isinstance(model, dict) else {}
+    if not isinstance(model, dict) or not isinstance(metadata, dict) or (metadata and (
+        metadata.get("owner") not in (None, owner) and str(metadata.get("owner")).lower() != owner.lower() or
+        metadata.get("repo") not in (None, repo) and str(metadata.get("repo")).lower() != repo.lower()
+    )):
+        return jsonify({"success": False, "error": "Repository model does not match the requested repository."}), 400
+    try:
+        if audit_only:
+            result = default_humanize_service.audit_repository(owner, repo, model, mode, ref)
+        else:
+            if not isinstance(path, str) or not path.strip():
+                return jsonify({"success": False, "error": "File path is required."}), 400
+            result = default_humanize_service.analyze_file(owner, repo, path.strip(), mode, ref, model)
+        return jsonify(result), (200 if result.get("success") else 403 if result.get("blocked") else 400)
+    except Exception as error:
+        logger.exception("Humanize analysis failed for %s/%s: %s", owner, repo, error)
+        return jsonify({"success": False, "error": "Humanize analysis failed."}), 500
+
+
+@app.route("/api/humanize/ai-preview", methods=["POST", "OPTIONS"])
+@limiter.limit(get_humanize_ai_limit)
+def api_humanize_ai_preview():
+    """Call AI only after an explicit request; return a patch, never apply it."""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True) or {}
+    if data.get("confirm_ai") is not True:
+        return jsonify({"success": False, "error": "AI preview requires explicit confirmation."}), 400
+    github_url = (data.get("repo_url") or data.get("url") or "").strip()
+    path = data.get("path")
+    mode = data.get("mode", "Balanced")
+    if not github_url or not isinstance(path, str) or not path.strip():
+        return jsonify({"success": False, "error": "Repository URL and file path are required."}), 400
+    if mode not in ("Conservative", "Balanced", "Aggressive"):
+        return jsonify({"success": False, "error": "Invalid Humanize mode."}), 400
+    try:
+        owner, repo = validate_github_url(github_url)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    model = get_cached_repository_model(owner, repo) or data.get("repository_model") or {}
+    metadata = model.get("metadata") or {} if isinstance(model, dict) else {}
+    if not isinstance(model, dict) or not isinstance(metadata, dict) or (metadata and (
+        metadata.get("owner") not in (None, owner) and str(metadata.get("owner")).lower() != owner.lower() or
+        metadata.get("repo") not in (None, repo) and str(metadata.get("repo")).lower() != repo.lower()
+    )):
+        return jsonify({"success": False, "error": "Repository model does not match the requested repository."}), 400
+    try:
+        result = default_humanize_service.ai_preview(
+            owner, repo, path.strip(), mode, model, True, data.get("ref"),
+            str(data.get("instructions") or ""),
+        )
+        return jsonify(result), (200 if result.get("success") else 403 if result.get("blocked") else 400)
+    except Exception as error:
+        logger.exception("AI Humanize preview failed for %s/%s: %s", owner, repo, error)
+        return jsonify({"success": False, "error": "AI preview failed."}), 502
 
 
 @app.route("/api/download", methods=["POST"])

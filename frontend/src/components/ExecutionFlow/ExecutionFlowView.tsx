@@ -27,6 +27,7 @@ interface ExecutionFlowViewProps {
   model?: RepositoryModel
   initialTrigger?: TraceTrigger
   onOpenSource?: (step: ExecutionStep) => void
+  onHumanize?: (path: string) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onExplainFlowWithAsk: (flow: ExecutionFlow) => void
@@ -39,6 +40,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
   initialTrigger,
   onInspectFile,
   onOpenSource,
+  onHumanize,
   onShowInGraph,
   onExplainFlowWithAsk,
   onAnalyzeImpact,
@@ -196,6 +198,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
               onClose={() => setSelectedStep(null)}
               onInspectFile={onInspectFile}
               onOpenSource={onOpenSource}
+              onHumanize={onHumanize}
               onShowInGraph={onShowInGraph}
               onAskAboutStep={handleAskAboutStep}
               onTraceFromStep={handleTraceFromStep}

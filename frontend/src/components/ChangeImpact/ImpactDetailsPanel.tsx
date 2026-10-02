@@ -32,6 +32,7 @@ interface ImpactDetailsPanelProps {
   onCloseSelection: () => void
   onSelectNode: (node: ImpactNode) => void
   onOpenSource?: (node: Pick<ImpactNode, "file" | "symbol" | "line">) => void
+  onHumanize?: (path: string) => void
   onInspectFile?: (file: string) => void
   onShowInGraph?: (file: string) => void
   onTraceFlow?: (file: string) => void
@@ -47,6 +48,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
   onSelectNode,
   onInspectFile,
   onOpenSource,
+  onHumanize,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeFromHere,
@@ -161,6 +163,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
 
         {/* Action Buttons */}
         <div className="pt-2 border-t border-border/60 flex flex-wrap gap-2">
+          {onHumanize && <button onClick={() => onHumanize(selectedNode.file)} className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium">Humanize</button>}
           {onOpenSource && <button onClick={() => onOpenSource(selectedNode)} className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium">View Source</button>}
           {onInspectFile && (
             <button

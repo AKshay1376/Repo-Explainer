@@ -24,6 +24,7 @@ interface AskRepoProps {
   model?: RepositoryModel
   initialScope?: AskRepoScope
   onOpenSource?: (location: SourceLocation) => void
+  onHumanize?: (path: string) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onTraceFlow?: (candidateFiles: string[], query?: string) => void
@@ -36,6 +37,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
   initialScope,
   onInspectFile,
   onOpenSource,
+  onHumanize,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeImpact,
@@ -169,6 +171,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
                 message={msg}
                 onInspectFile={onInspectFile}
                 onOpenSource={onOpenSource}
+                onHumanize={onHumanize}
                 onShowInGraph={onShowInGraph}
                 onTraceFlow={onTraceFlow}
                 onAnalyzeImpact={onAnalyzeImpact}

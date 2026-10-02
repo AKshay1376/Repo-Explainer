@@ -17,6 +17,7 @@ import {
   MessageSquareIcon,
   WorkflowIcon,
   ZapIcon,
+  SparklesIcon,
 } from "./ui/icons"
 import { ReportView } from "./ReportView"
 import { RepositoryExplorer } from "./RepositoryExplorer"
@@ -54,6 +55,7 @@ interface DashboardProps {
   repoUrl: string
 }
 
+const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((module) => ({ default: module.HumanizeView })))
 const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then((module) => ({ default: module.SourceViewer })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -81,18 +83,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source">(
+  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize">(
     repository_model ? "explorer" : "report"
   )
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "explorer" : "report"]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source") => {
+  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize") => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
   const openSource = React.useCallback((location: SourceLocation) => {
     setSourceLocation({ ...location, requestId: Date.now() })
     navigateTab("source")
+  }, [navigateTab])
+  const [humanizeTarget, setHumanizeTarget] = useState<{ path: string; requestId: number } | null>(null)
+  const openHumanize = React.useCallback((path: string) => {
+    setHumanizeTarget({ path, requestId: Date.now() })
+    navigateTab("humanize")
   }, [navigateTab])
   const [askScope, setAskScope] = useState<AskRepoScope | undefined>(undefined)
   const [traceTrigger, setTraceTrigger] = useState<TraceTrigger | undefined>(undefined)
@@ -488,6 +495,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeTab === "source" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}
           ><CodeIcon className="h-4 w-4 text-brand" /><span>Source Code</span></button>
 
+          <button onClick={() => navigateTab("humanize")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeTab === "humanize" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
+            <SparklesIcon className="h-4 w-4 text-brand" /><span>Humanize Codebase</span>
+          </button>
+
           <button
             onClick={() => navigateTab("report")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -513,7 +525,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
               canGoForward={historyIndex < history.length - 1} onClose={() => setSelectedFile(null)}
               onAskAboutFile={handleAskAboutFile} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
-              onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
+              onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} />
           </div>
         </div>
       </div>}
@@ -527,23 +539,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {visitedTabs.has("ask") && <div hidden={activeTab !== "ask"}>
         <AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
-          onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
+          onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} />
       </div>}
       {repository_model && visitedTabs.has("flow") && <div hidden={activeTab !== "flow"}>
         <ExecutionFlowView repoUrl={repoUrl} model={repository_model} initialTrigger={traceTrigger}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
           onExplainFlowWithAsk={handleExplainFlowWithAsk} onAnalyzeImpact={handleAnalyzeImpact}
-          onOpenSource={(step) => openSource(sourceForStep(step, repository_model))} />
+          onOpenSource={(step) => openSource(sourceForStep(step, repository_model))} onHumanize={openHumanize} />
       </div>}
       {repository_model && visitedTabs.has("impact") && <div hidden={activeTab !== "impact"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
         <ChangeImpactView repoUrl={repoUrl} repositoryModel={repository_model} trigger={impactTrigger}
           onSelectFile={handleSelectFile} onNavigateTab={(tab) => navigateTab(tab as "explorer" | "graph")}
           onTraceFlow={handleTraceFile} onAskRepo={() => { setAskScope(undefined); navigateTab("ask") }}
-          onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} />
+          onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} onHumanize={openHumanize} />
       </div>}
       {repository_model && visitedTabs.has("source") && <div hidden={activeTab !== "source"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading source viewer…</p>}>
-          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} />
+          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} />
+        </React.Suspense>
+      </div>}
+      {repository_model && visitedTabs.has("humanize") && <div hidden={activeTab !== "humanize"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Humanize…</p>}>
+          <HumanizeView repoUrl={repoUrl} model={repository_model} target={humanizeTarget}
+            onOpenSource={openSource} onAnalyzeImpact={handleAnalyzeImpact} onAskRepo={handleAskAboutFile} />
         </React.Suspense>
       </div>}
       {activeTab === "report" && <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card"><ReportView reportMarkdown={report} /></div>}
