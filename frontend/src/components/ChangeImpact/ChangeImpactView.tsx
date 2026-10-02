@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
+import type { PlanTrigger } from "../../types/refactor"
 import type { ImpactNode } from "../../types/impact"
 import type { ImpactTrigger, ImpactAnalysis } from "../../types/impact"
 import { useChangeImpact } from "../../hooks/useChangeImpact"
@@ -20,6 +21,7 @@ interface ChangeImpactViewProps {
   trigger?: ImpactTrigger | null
   onOpenSource?: (node: Pick<ImpactNode, "file" | "symbol" | "line">) => void
   onHumanize?: (path: string) => void
+  onCreatePlan?: (trigger: PlanTrigger) => void
   onSelectFile?: (file: string) => void
   onNavigateTab?: (tab: string) => void
   onTraceFlow?: (file: string) => void
@@ -33,6 +35,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
   onSelectFile,
   onOpenSource,
   onHumanize,
+  onCreatePlan,
   onNavigateTab,
   onTraceFlow,
   onAskRepo,
@@ -190,6 +193,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
               onInspectFile={handleInspectFile}
               onOpenSource={onOpenSource}
               onHumanize={onHumanize}
+              onCreatePlan={onCreatePlan}
               onShowInGraph={handleShowInGraph}
               onTraceFlow={handleTraceFlow}
               onAnalyzeFromHere={handleAnalyzeFromHere}

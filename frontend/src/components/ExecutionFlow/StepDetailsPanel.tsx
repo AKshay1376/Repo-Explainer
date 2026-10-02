@@ -5,6 +5,7 @@
 
 import React from "react"
 import type { ExecutionStep } from "../../types/trace"
+import type { PlanTrigger } from "../../types/refactor"
 import {
   FileCodeIcon,
   LayersIcon,
@@ -21,6 +22,7 @@ interface StepDetailsPanelProps {
   onClose: () => void
   onOpenSource?: (step: ExecutionStep) => void
   onHumanize?: (path: string) => void
+  onCreatePlan?: (trigger: PlanTrigger) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onAskAboutStep: (step: ExecutionStep) => void
@@ -34,6 +36,7 @@ export const StepDetailsPanel: React.FC<StepDetailsPanelProps> = ({
   onInspectFile,
   onOpenSource,
   onHumanize,
+  onCreatePlan,
   onShowInGraph,
   onAskAboutStep,
   onTraceFromStep,
@@ -94,6 +97,7 @@ export const StepDetailsPanel: React.FC<StepDetailsPanelProps> = ({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-2 pt-1">
+          {onCreatePlan && <button onClick={() => onCreatePlan({ planType: step.symbol ? "extract_function" : "move_file", target: step.file, options: step.symbol ? { symbol: step.symbol } : {} })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">Create Refactor Plan</button>}
           {onHumanize && <button onClick={() => onHumanize(step.file)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">Humanize</button>}
           {onOpenSource && <button onClick={() => onOpenSource(step)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">View Source</button>}
           <button

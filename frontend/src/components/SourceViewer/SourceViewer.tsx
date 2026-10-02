@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
+import type { PlanTrigger } from "../../types/refactor"
 import { useSourceFile } from "../../hooks/useSourceFile"
 import { findSourceMatches, githubSourceUrl, parseSourceReference, selectLineRange } from "../../lib/sourceNavigation"
 import { SourceCode } from "./SourceCode"
@@ -15,11 +16,12 @@ interface SourceViewerProps {
   onNavigate: (location: SourceLocation) => void
   visible: boolean
   onHumanize?: (path: string) => void
+  onCreatePlan?: (trigger: PlanTrigger) => void
 }
 
 const scrollPositions = new Map<string, number>()
 
-export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, location, onNavigate, visible, onHumanize }) => {
+export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, location, onNavigate, visible, onHumanize, onCreatePlan }) => {
   const [pathInput, setPathInput] = useState("")
   const [query, setQuery] = useState("")
   const [caseSensitive, setCaseSensitive] = useState(false)
@@ -71,6 +73,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
   return <section className="rounded-3xl border border-line bg-surface shadow-card overflow-hidden" aria-label="Source code viewer">
     <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
       <h2 className="mr-auto text-sm font-semibold text-ink">Source Code Viewer</h2>
+      {path && file && !file.is_sensitive && !file.is_binary && onCreatePlan && <button type="button" onClick={() => onCreatePlan({ planType: "move_file", target: path })} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Plan refactor</button>}
       {path && file && !file.is_sensitive && !file.is_binary && onHumanize && <button type="button" onClick={() => onHumanize(path)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 text-xs font-semibold text-brand">Humanize</button>}
       <form className="flex min-w-60 flex-1 gap-2 sm:max-w-xl" onSubmit={(event) => {
         event.preventDefault()

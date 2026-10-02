@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
 import type { HumanizeMode } from "../../types/humanize"
+import type { PlanTrigger } from "../../types/refactor"
 import { useHumanize } from "../../hooks/useHumanize"
 import { FindingCard } from "./FindingCard"
 import { PatchPreview } from "./PatchPreview"
@@ -13,9 +14,10 @@ interface HumanizeViewProps {
   onOpenSource: (location: SourceLocation) => void
   onAnalyzeImpact: (trigger: { file: string }) => void
   onAskRepo: (path: string) => void
+  onCreatePlan?: (trigger: PlanTrigger) => void
 }
 
-export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, target, onOpenSource, onAnalyzeImpact, onAskRepo }) => {
+export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, target, onOpenSource, onAnalyzeImpact, onAskRepo, onCreatePlan }) => {
   const [path, setPath] = useState(target?.path || "")
   const [mode, setMode] = useState<HumanizeMode>("Balanced")
   const [aiConsent, setAiConsent] = useState(false)
@@ -81,7 +83,7 @@ export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, targ
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Findings ({fileResult.finding_count})</h3>
-        {fileResult.findings.length ? fileResult.findings.map((finding) => <FindingCard key={finding.id} path={fileResult.path} finding={finding} onOpenSource={onOpenSource} />)
+        {fileResult.findings.length ? fileResult.findings.map((finding) => <FindingCard key={finding.id} path={fileResult.path} finding={finding} onOpenSource={onOpenSource} onCreatePlan={onCreatePlan} />)
           : <p className="text-xs text-ink-tertiary">No findings at this mode's thresholds.</p>}
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">

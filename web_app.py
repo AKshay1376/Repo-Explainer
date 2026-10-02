@@ -33,15 +33,19 @@ from rate_limit import (
     get_source_limit,
     get_humanize_limit,
     get_humanize_ai_limit,
+    get_refactor_limit,
+    get_refactor_ai_limit,
 )
 from repo_qa import default_ask_service
 from execution_trace import default_trace_service
 from change_impact import ChangeImpactService
 from source_service import get_source_file
 from humanize.service import HumanizeService
+from refactor_planner.service import RefactorPlannerService
 
 default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
+default_refactor_service = RefactorPlannerService(default_impact_service, default_trace_service)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -652,6 +656,93 @@ def api_humanize_ai_preview():
     except Exception as error:
         logger.exception("AI Humanize preview failed for %s/%s: %s", owner, repo, error)
         return jsonify({"success": False, "error": "AI preview failed."}), 502
+
+
+def _refactor_request_data():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("A JSON object is required.")
+    github_url = data.get("repo_url") or data.get("url") or ""
+    if not isinstance(github_url, str):
+        raise ValueError("Repository URL is required.")
+    owner, repo = validate_github_url(github_url.strip())
+    model = get_cached_repository_model(owner, repo) or data.get("repository_model") or {}
+    if not isinstance(model, dict):
+        raise ValueError("Repository model must be an object.")
+    metadata = model.get("metadata") or {}
+    if not isinstance(metadata, dict) or (metadata and (
+        str(metadata.get("owner", owner)).lower() != owner.lower() or
+        str(metadata.get("repo", repo)).lower() != repo.lower()
+    )):
+        raise ValueError("Repository model does not match the requested repository.")
+    return data, owner, repo, model
+
+
+def _refactor_inputs(data):
+    plan_type = data.get("plan_type")
+    target = data.get("target")
+    destination = data.get("destination")
+    options = data.get("options") or {}
+    ref = data.get("ref")
+    if not isinstance(plan_type, str) or not isinstance(target, str):
+        raise ValueError("Plan type and target are required.")
+    if destination is not None and not isinstance(destination, str):
+        raise ValueError("Destination must be text.")
+    if not isinstance(options, dict) or (ref is not None and not isinstance(ref, str)):
+        raise ValueError("Invalid plan options or revision.")
+    return plan_type, target, destination, options, ref
+
+
+@app.route("/api/refactor/plan", methods=["POST", "OPTIONS"])
+@limiter.limit(get_refactor_limit)
+def api_refactor_plan():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    try:
+        data, owner, repo, model = _refactor_request_data()
+        result = default_refactor_service.plan(owner, repo, model, *_refactor_inputs(data))
+        return jsonify(result), (200 if result.get("success") else 400)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    except Exception:
+        logger.exception("Refactor planning failed")
+        return jsonify({"success": False, "error": "Refactor planning failed."}), 500
+
+
+@app.route("/api/refactor/validate", methods=["POST", "OPTIONS"])
+@limiter.limit(get_refactor_limit)
+def api_refactor_validate():
+    """Return a validation checklist; do not execute target repository code."""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    try:
+        data, owner, repo, model = _refactor_request_data()
+        result = default_refactor_service.validate(owner, repo, model, *_refactor_inputs(data))
+        return jsonify(result), (200 if result.get("success") else 400)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    except Exception:
+        logger.exception("Refactor validation planning failed")
+        return jsonify({"success": False, "error": "Validation planning failed."}), 500
+
+
+@app.route("/api/refactor/explain", methods=["POST", "OPTIONS"])
+@limiter.limit(get_refactor_ai_limit)
+def api_refactor_explain():
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    try:
+        data, owner, repo, model = _refactor_request_data()
+        if data.get("confirm_ai") is not True:
+            return jsonify({"success": False, "error": "AI explanation requires explicit confirmation."}), 400
+        result = default_refactor_service.explain(
+            owner, repo, model, *_refactor_inputs(data), explicit_request=True)
+        return jsonify(result), (200 if result.get("success") else 400)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    except Exception:
+        logger.exception("Refactor AI explanation failed")
+        return jsonify({"success": False, "error": "AI explanation failed."}), 502
 
 
 @app.route("/api/download", methods=["POST"])

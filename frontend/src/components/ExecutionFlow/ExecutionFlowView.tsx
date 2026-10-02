@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react"
 import { ReactFlowProvider } from "@xyflow/react"
 import type { RepositoryModel } from "../../types/repository"
+import type { PlanTrigger } from "../../types/refactor"
 import type { ExecutionFlow, ExecutionStep, ExecutionEdge, TraceTrigger } from "../../types/trace"
 import { useExecutionTrace } from "../../hooks/useExecutionTrace"
 import { FlowCanvas } from "./FlowCanvas"
@@ -28,6 +29,7 @@ interface ExecutionFlowViewProps {
   initialTrigger?: TraceTrigger
   onOpenSource?: (step: ExecutionStep) => void
   onHumanize?: (path: string) => void
+  onCreatePlan?: (trigger: PlanTrigger) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onExplainFlowWithAsk: (flow: ExecutionFlow) => void
@@ -41,6 +43,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
   onInspectFile,
   onOpenSource,
   onHumanize,
+  onCreatePlan,
   onShowInGraph,
   onExplainFlowWithAsk,
   onAnalyzeImpact,
@@ -199,6 +202,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
               onInspectFile={onInspectFile}
               onOpenSource={onOpenSource}
               onHumanize={onHumanize}
+              onCreatePlan={onCreatePlan}
               onShowInGraph={onShowInGraph}
               onAskAboutStep={handleAskAboutStep}
               onTraceFromStep={handleTraceFromStep}

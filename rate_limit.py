@@ -19,6 +19,8 @@ RATELIMIT_IMPACT_DEFAULT = os.getenv("RATELIMIT_IMPACT", "30 per minute")
 RATELIMIT_SOURCE_DEFAULT = os.getenv("RATELIMIT_SOURCE", "60 per minute")
 RATELIMIT_HUMANIZE_DEFAULT = os.getenv("RATELIMIT_HUMANIZE", "30 per minute")
 RATELIMIT_HUMANIZE_AI_DEFAULT = os.getenv("RATELIMIT_HUMANIZE_AI", "5 per minute")
+RATELIMIT_REFACTOR_DEFAULT = os.getenv("RATELIMIT_REFACTOR", "20 per minute")
+RATELIMIT_REFACTOR_AI_DEFAULT = os.getenv("RATELIMIT_REFACTOR_AI", "5 per minute")
 
 
 def get_client_ip():
@@ -72,6 +74,16 @@ def get_humanize_limit():
 def get_humanize_ai_limit():
     """Stricter limit for explicitly requested AI previews."""
     return os.getenv("RATELIMIT_HUMANIZE_AI", RATELIMIT_HUMANIZE_AI_DEFAULT)
+
+
+def get_refactor_limit():
+    """Limit deterministic refactor planning requests."""
+    return os.getenv("RATELIMIT_REFACTOR", RATELIMIT_REFACTOR_DEFAULT)
+
+
+def get_refactor_ai_limit():
+    """Limit explicitly requested AI plan explanations."""
+    return os.getenv("RATELIMIT_REFACTOR_AI", RATELIMIT_REFACTOR_AI_DEFAULT)
 
 
 def init_limiter(app):

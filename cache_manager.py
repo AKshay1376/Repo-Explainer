@@ -30,6 +30,7 @@ _file_contents_cache: TTLCache = TTLCache(maxsize=DEFAULT_CACHE_MAXSIZE, ttl=DEF
 _impact_cache: TTLCache = TTLCache(maxsize=DEFAULT_CACHE_MAXSIZE, ttl=DEFAULT_CACHE_TTL)
 _source_file_cache: TTLCache = TTLCache(maxsize=1000, ttl=DEFAULT_CACHE_TTL)
 _humanize_cache: TTLCache = TTLCache(maxsize=500, ttl=DEFAULT_CACHE_TTL)
+_refactor_cache: TTLCache = TTLCache(maxsize=300, ttl=DEFAULT_CACHE_TTL)
 
 
 def _normalize_key(owner: str, repo: str, extra: str = "") -> str:
@@ -181,6 +182,22 @@ def set_cached_humanize(key: str, data: Dict[str, Any]) -> None:
         _humanize_cache[key] = data
 
 
+def get_cached_refactor_plan(key: str) -> Optional[Dict[str, Any]]:
+    """Retrieve a deterministic SHA-bound refactor plan."""
+    if not CACHE_ENABLED:
+        return None
+    with _lock:
+        return _refactor_cache.get(key)
+
+
+def set_cached_refactor_plan(key: str, data: Dict[str, Any]) -> None:
+    """Cache successful deterministic plans only."""
+    if not CACHE_ENABLED or not data or not data.get("success"):
+        return
+    with _lock:
+        _refactor_cache[key] = data
+
+
 def clear_cache() -> None:
     """Clear all caches."""
     with _lock:
@@ -192,6 +209,7 @@ def clear_cache() -> None:
         _impact_cache.clear()
         _source_file_cache.clear()
         _humanize_cache.clear()
+        _refactor_cache.clear()
 
 
 def get_cache_stats() -> Dict[str, Any]:
@@ -209,5 +227,6 @@ def get_cache_stats() -> Dict[str, Any]:
             "impact_count": len(_impact_cache),
             "source_file_count": len(_source_file_cache),
             "humanize_count": len(_humanize_cache),
+            "refactor_count": len(_refactor_cache),
         }
 
