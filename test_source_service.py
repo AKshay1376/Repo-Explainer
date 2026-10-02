@@ -5,6 +5,7 @@ Deterministic in-memory fixtures. No live GitHub or LLM calls.
 """
 
 import unittest
+from unittest.mock import patch
 from source_service import (
     detect_language,
     is_generated_file,
@@ -71,6 +72,7 @@ class TestSourceService(unittest.TestCase):
         self.assertTrue(res["success"])
         file_info = res["file"]
         self.assertTrue(file_info["redacted"])
+        self.assertTrue(file_info["is_sensitive"])
         self.assertIn("Sensitive value redacted", file_info["content"])
 
     def test_secret_sanitization_in_content(self):
@@ -82,6 +84,8 @@ class TestSourceService(unittest.TestCase):
         self.assertTrue(res["success"])
         file_info = res["file"]
         self.assertTrue(file_info["redacted"])
+        self.assertFalse(file_info["is_sensitive"])
+        self.assertIn("console.log(apiKey);", file_info["content"])
         self.assertIn("[Sensitive value redacted]", file_info["content"])
         self.assertNotIn("sk-proj-", file_info["content"])
 
@@ -166,6 +170,52 @@ class TestSourceService(unittest.TestCase):
         resp_get = client.get("/api/source?url=https://github.com/testowner/testrepo&path=src/services/auth.ts")
         self.assertEqual(resp_get.status_code, 200)
         self.assertTrue(resp_get.get_json()["success"])
+
+
+    def test_cache_miss_fetches_once_then_hits_cache(self):
+        with patch("source_service.get_file_content", return_value="print('safe')") as fetch:
+            first = get_source_file("owner", "repo", "src/app.py")
+            second = get_source_file("owner", "repo", "src/app.py")
+        self.assertTrue(first["success"])
+        self.assertEqual(second["file"]["content"], first["file"]["content"])
+        fetch.assert_called_once_with("owner", "repo", "src/app.py", branch=None)
+
+    def test_sensitive_paths_never_fetch(self):
+        with patch("source_service.get_file_content") as fetch:
+            for path in (".env", "config/.env.staging", "keys/id_rsa", "credentials.json"):
+                result = get_source_file("owner", "repo", path)
+                self.assertTrue(result["success"])
+                self.assertTrue(result["file"]["redacted"])
+                self.assertNotIn("raw-secret", result["file"]["content"])
+        fetch.assert_not_called()
+
+    def test_missing_file_and_absolute_path(self):
+        with patch("source_service.get_file_content", side_effect=FileNotFoundError("missing")):
+            result = get_source_file("owner", "repo", "src/missing.py")
+        self.assertFalse(result["success"])
+        self.assertIn("missing", result["error"])
+        for path in ("/etc/passwd", "C:/secrets.txt", "src/../secrets.txt", "src/" + chr(0) + "bad"):
+            self.assertFalse(get_source_file("owner", "repo", path)["success"])
+
+    def test_large_file_warning(self):
+        set_cached_file_contents("owner", "repo", {"src/large.py": chr(10).join(["x"] * 5001)})
+        result = get_source_file("owner", "repo", "src/large.py")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["file"]["line_count"], 5001)
+        self.assertIn("Large file", result["file"]["warning"])
+
+    def test_source_line_range_response(self):
+        client = app.test_client()
+        content = chr(10).join(["one", "two", "three"])
+        set_cached_file_contents("owner", "repo", {"src/app.py": content})
+        base = {"repo_url": "https://github.com/owner/repo", "path": "src/app.py"}
+        valid = client.post("/api/source", json={**base, "start_line": 2, "end_line": 3})
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.get_json()["selection"], {"start_line": 2, "end_line": 3})
+        self.assertEqual(valid.get_json()["file"]["content"], content)
+        for start, end in ((0, 2), (3, 2), (None, 2), (True, 2)):
+            invalid = client.post("/api/source", json={**base, "start_line": start, "end_line": end})
+            self.assertEqual(invalid.status_code, 400)
 
 
 if __name__ == "__main__":

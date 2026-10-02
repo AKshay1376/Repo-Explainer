@@ -3,6 +3,7 @@
  * Primary Ask Repo view providing developer-focused, grounded codebase Q&A.
  */
 
+import type { SourceLocation } from "../../types/source"
 import React, { useRef, useEffect, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { AskRepoScope } from "../../types/qa"
@@ -22,6 +23,7 @@ interface AskRepoProps {
   repoUrl: string
   model?: RepositoryModel
   initialScope?: AskRepoScope
+  onOpenSource?: (location: SourceLocation) => void
   onInspectFile: (filePath: string) => void
   onShowInGraph: (filePath: string) => void
   onTraceFlow?: (candidateFiles: string[], query?: string) => void
@@ -33,6 +35,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
   model,
   initialScope,
   onInspectFile,
+  onOpenSource,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeImpact,
@@ -165,6 +168,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
                 key={msg.id}
                 message={msg}
                 onInspectFile={onInspectFile}
+                onOpenSource={onOpenSource}
                 onShowInGraph={onShowInGraph}
                 onTraceFlow={onTraceFlow}
                 onAnalyzeImpact={onAnalyzeImpact}

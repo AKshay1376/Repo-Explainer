@@ -29,6 +29,9 @@ import type { RepositoryModel } from "../types/repository"
 import type { AskRepoScope } from "../types/qa"
 import type { TraceTrigger, ExecutionFlow } from "../types/trace"
 import type { ImpactTrigger } from "../types/impact"
+import type { SourceLocation } from "../types/source"
+
+import { sourceForStep, sourceForImpact } from "../lib/sourceNavigation"
 
 export interface AnalysisData {
   info: {
@@ -50,6 +53,8 @@ interface DashboardProps {
   onReset: () => void
   repoUrl: string
 }
+
+const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then((module) => ({ default: module.SourceViewer })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -76,16 +81,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report">(
+  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source">(
     repository_model ? "explorer" : "report"
   )
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "explorer" : "report"]))
+  const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
+  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source") => {
+    setVisitedTabs((previous) => new Set(previous).add(tab))
+    setActiveTab(tab)
+  }, [])
+  const openSource = React.useCallback((location: SourceLocation) => {
+    setSourceLocation({ ...location, requestId: Date.now() })
+    navigateTab("source")
+  }, [navigateTab])
   const [askScope, setAskScope] = useState<AskRepoScope | undefined>(undefined)
   const [traceTrigger, setTraceTrigger] = useState<TraceTrigger | undefined>(undefined)
   const [impactTrigger, setImpactTrigger] = useState<ImpactTrigger | null>(null)
 
   const handleAnalyzeImpact = (trigger: ImpactTrigger) => {
     setImpactTrigger(trigger)
-    setActiveTab("impact")
+    navigateTab("impact")
   }
 
   const handleSelectFile = (path: string, pushHistory = true) => {
@@ -99,22 +114,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleAskAboutFile = (filePath: string) => {
     setAskScope({ file: filePath })
-    setActiveTab("ask")
+    navigateTab("ask")
   }
 
   const handleAskAboutEdge = (edgeData: { source: string; target: string; type: string }) => {
     setAskScope({ edge: edgeData })
-    setActiveTab("ask")
+    navigateTab("ask")
   }
 
   const handleInspectFileFromAsk = (filePath: string) => {
     handleSelectFile(filePath)
-    setActiveTab("explorer")
+    navigateTab("explorer")
   }
 
   const handleShowInGraphFromAsk = (filePath: string) => {
     handleSelectFile(filePath)
-    setActiveTab("graph")
+    navigateTab("graph")
   }
 
   const handleTraceFile = (filePath: string, symbol?: string) => {
@@ -122,21 +137,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
       startFile: filePath,
       startSymbol: symbol,
     })
-    setActiveTab("flow")
+    navigateTab("flow")
   }
 
   const handleTraceRoute = (routeStr: string) => {
     setTraceTrigger({
       route: routeStr,
     })
-    setActiveTab("flow")
+    navigateTab("flow")
   }
 
   const handleTraceEdge = (edgeData: { source: string; target: string; type: string }) => {
     setTraceTrigger({
       startFile: edgeData.source,
     })
-    setActiveTab("flow")
+    navigateTab("flow")
   }
 
   const handleTraceFromAsk = (candidateFiles: string[], query?: string) => {
@@ -148,7 +163,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           query,
         },
       })
-      setActiveTab("flow")
+      navigateTab("flow")
     }
   }
 
@@ -156,7 +171,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (flow.steps && flow.steps.length > 0) {
       setAskScope({ file: flow.steps[0].file })
     }
-    setActiveTab("ask")
+    navigateTab("ask")
   }
 
   const handleNavigateBack = () => {
@@ -325,7 +340,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 key={file}
                 onClick={() => {
                   handleSelectFile(file)
-                  setActiveTab("explorer")
+                  navigateTab("explorer")
                 }}
                 className={`w-full text-left flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-all cursor-pointer ${
                   selectedFile === file && activeTab === "explorer"
@@ -378,7 +393,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           key={f}
                           onClick={() => {
                             handleSelectFile(fullPath)
-                            setActiveTab("explorer")
+                            navigateTab("explorer")
                           }}
                           className="w-full text-left font-mono text-[11px] text-ink-secondary hover:text-brand truncate block cursor-pointer"
                           title={`Inspect ${fullPath}`}
@@ -404,7 +419,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex items-center justify-between border-b border-line pb-4">
         <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-surface-subtle/80 border border-line">
           <button
-            onClick={() => setActiveTab("explorer")}
+            onClick={() => navigateTab("explorer")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "explorer"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -421,7 +436,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("graph")}
+            onClick={() => navigateTab("graph")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "graph"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -433,7 +448,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("ask")}
+            onClick={() => navigateTab("ask")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "ask"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -445,7 +460,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("flow")}
+            onClick={() => navigateTab("flow")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "flow"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -457,7 +472,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("impact")}
+            onClick={() => navigateTab("impact")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "impact"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -469,7 +484,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("report")}
+            onClick={() => navigateTab("source")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeTab === "source" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}
+          ><CodeIcon className="h-4 w-4 text-brand" /><span>Source Code</span></button>
+
+          <button
+            onClick={() => navigateTab("report")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === "report"
                 ? "bg-surface text-ink shadow-subtle border border-line"
@@ -482,102 +502,53 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* 4. Tab Content: Interactive Explorer OR Architecture Graph OR Ask Repo OR Execution Flow OR Executive Report */}
-      {activeTab === "explorer" && repository_model ? (
+      {/* Views stay mounted after first visit so conversations and graph position survive navigation. */}
+      {repository_model && visitedTabs.has("explorer") && <div hidden={activeTab !== "explorer"}>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left: Repository Explorer & Filters */}
           <div className="lg:col-span-5 rounded-3xl border border-line bg-surface shadow-card overflow-hidden">
-            <RepositoryExplorer
-              model={repository_model}
-              selectedFile={selectedFile}
-              onSelectFile={(path) => handleSelectFile(path)}
-            />
+            <RepositoryExplorer model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile} />
           </div>
-
-          {/* Right: File Inspector Panel */}
           <div className="lg:col-span-7 rounded-3xl border border-line bg-surface shadow-card overflow-hidden sticky top-6">
-            <FileInspector
-              filePath={selectedFile}
-              model={repository_model}
-              onSelectFile={(path) => handleSelectFile(path)}
-              onNavigateBack={handleNavigateBack}
-              onNavigateForward={handleNavigateForward}
-              canGoBack={historyIndex > 0}
-              canGoForward={historyIndex < history.length - 1}
-              onClose={() => setSelectedFile(null)}
-              onAskAboutFile={handleAskAboutFile}
-              onTraceFile={handleTraceFile}
-              onTraceRoute={handleTraceRoute}
-              onAnalyzeImpact={handleAnalyzeImpact}
-            />
+            <FileInspector filePath={selectedFile} model={repository_model} onSelectFile={handleSelectFile}
+              onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
+              canGoForward={historyIndex < history.length - 1} onClose={() => setSelectedFile(null)}
+              onAskAboutFile={handleAskAboutFile} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
+              onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
           </div>
         </div>
-      ) : activeTab === "graph" && repository_model ? (
-        /* Interactive Visual Architecture Graph */
-        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
-          <ArchitectureGraph
-            model={repository_model}
-            selectedFile={selectedFile}
-            onSelectFile={(path) => handleSelectFile(path)}
-            onNavigateBack={handleNavigateBack}
-            onNavigateForward={handleNavigateForward}
-            canGoBack={historyIndex > 0}
-            canGoForward={historyIndex < history.length - 1}
-            onAskAboutFile={handleAskAboutFile}
-            onAskAboutEdge={handleAskAboutEdge}
-            onTraceFile={handleTraceFile}
-            onTraceRoute={handleTraceRoute}
-            onTraceEdge={handleTraceEdge}
-            onAnalyzeImpact={handleAnalyzeImpact}
-          />
-        </div>
-      ) : activeTab === "ask" ? (
-        /* Context-Aware Grounded Ask Repo Q&A Assistant */
-        <AskRepo
-          repoUrl={repoUrl}
-          model={repository_model}
-          initialScope={askScope}
-          onInspectFile={handleInspectFileFromAsk}
-          onShowInGraph={handleShowInGraphFromAsk}
-          onTraceFlow={handleTraceFromAsk}
-          onAnalyzeImpact={handleAnalyzeImpact}
-        />
-      ) : activeTab === "flow" && repository_model ? (
-        /* Execution Flow Tracing */
-        <ExecutionFlowView
-          repoUrl={repoUrl}
-          model={repository_model}
-          initialTrigger={traceTrigger}
-          onInspectFile={handleInspectFileFromAsk}
-          onShowInGraph={handleShowInGraphFromAsk}
-          onExplainFlowWithAsk={handleExplainFlowWithAsk}
-          onAnalyzeImpact={handleAnalyzeImpact}
-        />
-      ) : activeTab === "impact" && repository_model ? (
-        /* Change Impact Analysis */
-        <div className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
-          <ChangeImpactView
-            repoUrl={repoUrl}
-            repositoryModel={repository_model}
-            trigger={impactTrigger}
-            onSelectFile={(path) => handleSelectFile(path)}
-            onNavigateTab={(tab) => setActiveTab(tab as any)}
-            onTraceFlow={(file) => handleTraceFile(file)}
-            onAskRepo={(prompt) => {
-              setAskScope(undefined)
-              setActiveTab("ask")
-            }}
-          />
-        </div>
-      ) : (
-        /* Executive Markdown Report View */
-        <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card">
-          <ReportView reportMarkdown={report} />
-        </div>
-      )}
+      </div>}
+      {repository_model && visitedTabs.has("graph") && <div hidden={activeTab !== "graph"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
+        <ArchitectureGraph model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile}
+          onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
+          canGoForward={historyIndex < history.length - 1} onAskAboutFile={handleAskAboutFile}
+          onAskAboutEdge={handleAskAboutEdge} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
+          onTraceEdge={handleTraceEdge} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
+      </div>}
+      {visitedTabs.has("ask") && <div hidden={activeTab !== "ask"}>
+        <AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope}
+          onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
+          onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
+      </div>}
+      {repository_model && visitedTabs.has("flow") && <div hidden={activeTab !== "flow"}>
+        <ExecutionFlowView repoUrl={repoUrl} model={repository_model} initialTrigger={traceTrigger}
+          onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
+          onExplainFlowWithAsk={handleExplainFlowWithAsk} onAnalyzeImpact={handleAnalyzeImpact}
+          onOpenSource={(step) => openSource(sourceForStep(step, repository_model))} />
+      </div>}
+      {repository_model && visitedTabs.has("impact") && <div hidden={activeTab !== "impact"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
+        <ChangeImpactView repoUrl={repoUrl} repositoryModel={repository_model} trigger={impactTrigger}
+          onSelectFile={handleSelectFile} onNavigateTab={(tab) => navigateTab(tab as "explorer" | "graph")}
+          onTraceFlow={handleTraceFile} onAskRepo={() => { setAskScope(undefined); navigateTab("ask") }}
+          onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} />
+      </div>}
+      {repository_model && visitedTabs.has("source") && <div hidden={activeTab !== "source"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading source viewer…</p>}>
+          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} />
+        </React.Suspense>
+      </div>}
+      {activeTab === "report" && <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card"><ReportView reportMarkdown={report} /></div>}
     </div>
   )
 }
 
 export default Dashboard
-

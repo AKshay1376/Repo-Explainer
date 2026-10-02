@@ -6,6 +6,7 @@ interface EdgeDetailsModalProps {
   edgeData: GraphEdgeData | null
   onClose: () => void
   onSelectFile?: (path: string) => void
+  onOpenSource?: (path: string) => void
   onAskAboutEdge?: (edgeData: GraphEdgeData) => void
   onTraceEdge?: (edgeData: GraphEdgeData) => void
   onAnalyzeImpact?: (trigger: { file?: string }) => void
@@ -15,6 +16,7 @@ export const EdgeDetailsModal: React.FC<EdgeDetailsModalProps> = ({
   edgeData,
   onClose,
   onSelectFile,
+  onOpenSource,
   onAskAboutEdge,
   onTraceEdge,
   onAnalyzeImpact,
@@ -65,6 +67,7 @@ export const EdgeDetailsModal: React.FC<EdgeDetailsModalProps> = ({
             )}
           </div>
           <div className="font-semibold text-ink truncate select-all">{edgeData.source.replace("layer-", "")}</div>
+          {!isLayerEdge && onOpenSource && <button onClick={() => onOpenSource(edgeData.source)} className="text-[10px] text-brand hover:underline">Source code</button>}
 
           <div className="flex items-center justify-center my-1 text-brand">
             <div className="px-2 py-0.5 rounded-full bg-brand-surface text-[10px] font-sans font-bold border border-brand-border/40 flex items-center gap-1">
@@ -85,6 +88,7 @@ export const EdgeDetailsModal: React.FC<EdgeDetailsModalProps> = ({
             )}
           </div>
           <div className="font-semibold text-ink truncate select-all">{edgeData.target.replace("layer-", "")}</div>
+          {!isLayerEdge && onOpenSource && <button onClick={() => onOpenSource(edgeData.target)} className="text-[10px] text-brand hover:underline">Source code</button>}
         </div>
       </div>
 

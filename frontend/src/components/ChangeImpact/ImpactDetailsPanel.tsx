@@ -31,6 +31,7 @@ interface ImpactDetailsPanelProps {
   selectedEdge: ImpactEdge | null
   onCloseSelection: () => void
   onSelectNode: (node: ImpactNode) => void
+  onOpenSource?: (node: Pick<ImpactNode, "file" | "symbol" | "line">) => void
   onInspectFile?: (file: string) => void
   onShowInGraph?: (file: string) => void
   onTraceFlow?: (file: string) => void
@@ -45,6 +46,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
   onCloseSelection,
   onSelectNode,
   onInspectFile,
+  onOpenSource,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeFromHere,
@@ -115,6 +117,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
                     >
                       {step.split("/").pop()}
                     </span>
+                    {onOpenSource && <button type="button" onClick={() => onOpenSource({ file: step })} className="text-[10px] text-primary hover:underline">Source</button>}
                     {idx < selectedNode.path_from_target.length - 1 && (
                       <span className="text-muted-foreground flex items-center text-[10px]">
                         <ArrowRightIcon className="w-3 h-3 mx-0.5" />
@@ -158,6 +161,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
 
         {/* Action Buttons */}
         <div className="pt-2 border-t border-border/60 flex flex-wrap gap-2">
+          {onOpenSource && <button onClick={() => onOpenSource(selectedNode)} className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium">View Source</button>}
           {onInspectFile && (
             <button
               type="button"
@@ -372,6 +376,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
                     <span className="text-[10px] text-muted-foreground">{r.confidence}</span>
                   </div>
                   <div className="font-mono text-[11px] text-muted-foreground truncate">{r.file}</div>
+                  {onOpenSource && r.file && <button onClick={() => onOpenSource({ file: r.file! })} className="text-[10px] text-primary hover:underline">View Source</button>}
                   {r.evidence && <div className="text-[10px] text-foreground/80">{r.evidence}</div>}
                 </div>
               ))
@@ -390,6 +395,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
                     <span className="font-mono font-bold text-amber-400 truncate">{t.file}</span>
                     <span className="text-[10px] text-muted-foreground">{t.confidence}</span>
                   </div>
+                  {onOpenSource && t.file && <button onClick={() => onOpenSource({ file: t.file! })} className="text-[10px] text-primary hover:underline">View Source</button>}
                   {t.evidence && <div className="text-[10px] text-foreground/80">{t.evidence}</div>}
                 </div>
               ))
@@ -409,6 +415,7 @@ export const ImpactDetailsPanel: React.FC<ImpactDetailsPanelProps> = ({
                     <span className="text-[10px] text-muted-foreground">{m.framework}</span>
                   </div>
                   <div className="font-mono text-[11px] text-muted-foreground truncate">{m.file}</div>
+                  {onOpenSource && m.file && <button onClick={() => onOpenSource({ file: m.file! })} className="text-[10px] text-primary hover:underline">View Source</button>}
                   {m.evidence && <div className="text-[10px] text-foreground/80">{m.evidence}</div>}
                 </div>
               ))

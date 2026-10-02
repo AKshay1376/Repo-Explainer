@@ -395,3 +395,15 @@
 }
 
 
+.source-code .token.comment,
+.source-code .token.prolog { color: #768397; }
+.source-code .token.keyword,
+.source-code .token.boolean { color: #a63eb5; }
+.source-code .token.string,
+.source-code .token.char { color: #168047; }
+.source-code .token.function,
+.source-code .token.class-name { color: #2267b4; }
+.source-code .token.number,
+.source-code .token.constant { color: #ad5b15; }
+.source-code .token.operator,
+.source-code .token.punctuation { color: inherit; }

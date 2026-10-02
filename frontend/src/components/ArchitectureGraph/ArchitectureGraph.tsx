@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
+import type { SourceLocation } from "../../types/source"
 import type { RepositoryModel } from "../../types/repository"
 import type {
   GraphMode,
@@ -33,6 +34,7 @@ import { FileInspector } from "../FileInspector"
 interface ArchitectureGraphProps {
   model: RepositoryModel
   selectedFile: string | null
+  onOpenSource?: (location: SourceLocation) => void
   onSelectFile: (path: string) => void
   onNavigateBack?: () => void
   onNavigateForward?: () => void
@@ -55,6 +57,7 @@ const GraphCanvasInner: React.FC<ArchitectureGraphProps> = ({
   model,
   selectedFile,
   onSelectFile,
+  onOpenSource,
   onNavigateBack,
   onNavigateForward,
   canGoBack,
@@ -112,14 +115,14 @@ const GraphCanvasInner: React.FC<ArchitectureGraphProps> = ({
     } else {
       const res = buildFilesGraph(model, filters, selectedFile)
       return {
-        rawNodes: res.nodes,
+        rawNodes: res.nodes.map((node) => ({ ...node, data: { ...node.data, onOpenSource: (path: string) => onOpenSource?.({ path }) } })),
         rawEdges: res.edges,
         isTruncated: res.isTruncated,
         totalMatching: res.totalMatching,
         displayedCount: res.displayedCount,
       }
     }
-  }, [mode, model, filters, selectedFile])
+  }, [mode, model, filters, selectedFile, onOpenSource])
 
   // Apply deterministic Dagre layout
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(() => {
@@ -230,6 +233,7 @@ const GraphCanvasInner: React.FC<ArchitectureGraphProps> = ({
             onAskAboutEdge={onAskAboutEdge}
             onTraceEdge={onTraceEdge}
             onAnalyzeImpact={onAnalyzeImpact}
+            onOpenSource={(path) => onOpenSource?.({ path })}
           />
 
           {/* Open Inspector Floating Button (if file selected but inspector hidden) */}
@@ -259,6 +263,7 @@ const GraphCanvasInner: React.FC<ArchitectureGraphProps> = ({
               onTraceFile={onTraceFile}
               onTraceRoute={onTraceRoute}
               onAnalyzeImpact={onAnalyzeImpact}
+              onOpenSource={onOpenSource}
             />
           </div>
         )}

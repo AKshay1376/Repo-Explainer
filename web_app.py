@@ -518,11 +518,30 @@ def api_source():
         github_url = (request.args.get("url") or request.args.get("repo_url") or "").strip()
         file_path = (request.args.get("path") or request.args.get("file_path") or "").strip()
         commit_or_branch = (request.args.get("commit") or request.args.get("ref") or request.args.get("branch") or "").strip()
+        start_line_raw = request.args.get("start_line")
+        end_line_raw = request.args.get("end_line")
     else:
         data = request.get_json(silent=True) or {}
         github_url = (data.get("url") or data.get("repo_url") or "").strip()
         file_path = (data.get("path") or data.get("file_path") or "").strip()
         commit_or_branch = (data.get("commit_sha") or data.get("commit") or data.get("ref") or data.get("branch") or "").strip()
+        start_line_raw = data.get("start_line")
+        end_line_raw = data.get("end_line")
+
+    def parse_line(value):
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)) or int(value) < 1:
+            raise ValueError("Line numbers must be positive integers.")
+        return int(value)
+
+    try:
+        start_line = parse_line(start_line_raw)
+        end_line = parse_line(end_line_raw)
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    if end_line is not None and (start_line is None or end_line < start_line):
+        return jsonify({"success": False, "error": "Invalid line range."}), 400
 
     if not github_url:
         return jsonify({"success": False, "error": "Repository URL is required."}), 400
@@ -545,6 +564,8 @@ def api_source():
             commit_or_branch=commit_or_branch or None,
             repo_model=repo_model,
         )
+        if source_result.get("success") and start_line is not None:
+            source_result["selection"] = {"start_line": start_line, "end_line": end_line or start_line}
         return jsonify(source_result)
     except Exception as e:
         logger.exception("Error retrieving source file %s for %s/%s: %s", file_path, owner, repo, e)
@@ -630,4 +651,4 @@ if __name__ == "__main__":
             app.run(host="0.0.0.0", port=port, debug=False)
     else:
         logger.info("Starting development server on port %d (debug=%s)...", port, is_dev)
-        app.run(host="0.0.0.0", port=port, debug=is_dev)
+        app.run(host="0.0.0.0", port=port, debug=is_dev)

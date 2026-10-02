@@ -4,6 +4,7 @@
  */
 
 import React from "react"
+import type { SourceLocation } from "../../types/source"
 import type { AskCitation as AskCitationType } from "../../types/qa"
 import { FileCodeIcon, ExternalLinkIcon, LayersIcon } from "../ui/icons"
 
@@ -11,12 +12,14 @@ interface AskCitationProps {
   citation: AskCitationType
   onInspectFile?: (filePath: string) => void
   onShowInGraph?: (filePath: string) => void
+  onOpenSource?: (location: SourceLocation) => void
 }
 
 export const AskCitation: React.FC<AskCitationProps> = ({
   citation,
   onInspectFile,
   onShowInGraph,
+  onOpenSource,
 }) => {
   const fileName = citation.file.split("/").pop() || citation.file
   const hasLine = citation.line != null
@@ -30,6 +33,7 @@ export const AskCitation: React.FC<AskCitationProps> = ({
       </span>
 
       <span className="flex items-center gap-1 ml-1 shrink-0">
+        {onOpenSource && <button onClick={() => onOpenSource({ path: citation.file, ...(citation.line ? { startLine: citation.line, endLine: citation.line } : {}) })} className="text-[10px] uppercase font-semibold text-brand hover:underline">Source</button>}
         {onInspectFile && (
           <button
             onClick={() => onInspectFile(citation.file)}

@@ -116,8 +116,9 @@ def get_source_file(
     Retrieve single source file with caching, sanitization, and entity metadata.
     """
     # 1. Normalize and validate file path
-    clean_path = file_path.strip().replace("\\", "/").lstrip("/")
-    if not clean_path or ".." in clean_path.split("/"):
+    clean_path = file_path.strip().replace("\\", "/")
+    if (not clean_path or clean_path.startswith("/") or ":" in clean_path.split("/")[0]
+            or chr(0) in clean_path or ".." in clean_path.split("/")):
         return {
             "success": False,
             "error": "Invalid file path provided.",
@@ -137,6 +138,7 @@ def get_source_file(
                 "size": 0,
                 "commit_sha": branch_ref or "default",
                 "redacted": False,
+                "is_sensitive": False,
                 "is_binary": True,
                 "is_generated": False,
                 "warning": "Binary file: preview not available.",
@@ -159,6 +161,7 @@ def get_source_file(
                 "size": len(redacted_content),
                 "commit_sha": branch_ref or "default",
                 "redacted": True,
+                "is_sensitive": True,
                 "is_binary": False,
                 "is_generated": False,
                 "warning": "Sensitive value redacted",
@@ -201,6 +204,10 @@ def get_source_file(
         is_gen = is_generated_file(clean_path, sanitized)
         line_count = len(sanitized.splitlines()) if sanitized else 0
 
+        warning = "Generated file" if is_gen else None
+        if line_count > 5000:
+            warning = f"{warning}; large file ({line_count} lines)" if warning else f"Large file ({line_count} lines)"
+
         file_payload = {
             "path": clean_path,
             "language": detect_language(clean_path),
@@ -209,9 +216,10 @@ def get_source_file(
             "size": len(sanitized.encode("utf-8")),
             "commit_sha": branch_ref or "default",
             "redacted": was_redacted,
+            "is_sensitive": False,
             "is_binary": False,
             "is_generated": is_gen,
-            "warning": "Generated file" if is_gen else None,
+            "warning": warning,
         }
 
         # Cache in thread-safe TTL cache

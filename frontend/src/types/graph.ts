@@ -17,6 +17,7 @@ export interface LayerNodeData {
 
 export interface FileNodeData {
   path: string
+  onOpenSource?: (path: string) => void
   name: string
   extension: string
   language: string

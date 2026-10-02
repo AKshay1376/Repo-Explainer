@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
+import type { ImpactNode } from "../../types/impact"
 import type { ImpactTrigger, ImpactAnalysis } from "../../types/impact"
 import { useChangeImpact } from "../../hooks/useChangeImpact"
 import { BlastRadiusCard } from "./BlastRadiusCard"
@@ -17,6 +18,7 @@ interface ChangeImpactViewProps {
   repoUrl: string
   repositoryModel?: RepositoryModel
   trigger?: ImpactTrigger | null
+  onOpenSource?: (node: Pick<ImpactNode, "file" | "symbol" | "line">) => void
   onSelectFile?: (file: string) => void
   onNavigateTab?: (tab: string) => void
   onTraceFlow?: (file: string) => void
@@ -28,6 +30,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
   repositoryModel,
   trigger,
   onSelectFile,
+  onOpenSource,
   onNavigateTab,
   onTraceFlow,
   onAskRepo,
@@ -183,6 +186,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
               onCloseSelection={clearSelection}
               onSelectNode={setSelectedNode}
               onInspectFile={handleInspectFile}
+              onOpenSource={onOpenSource}
               onShowInGraph={handleShowInGraph}
               onTraceFlow={handleTraceFlow}
               onAnalyzeFromHere={handleAnalyzeFromHere}

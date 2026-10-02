@@ -19,6 +19,7 @@ export const FileNode = memo(({ data, targetPosition = Position.Top, sourcePosit
   const {
     name,
     path,
+    onOpenSource,
     category,
     isEntryPoint,
     hasRoutes,
@@ -102,6 +103,7 @@ export const FileNode = memo(({ data, targetPosition = Position.Top, sourcePosit
         {/* Path or Neighborhood Context */}
         <div className="flex items-center justify-between text-[10px] text-ink-tertiary font-mono truncate">
           <span className="truncate">{path}</span>
+          {onOpenSource && <button type="button" onClick={(event) => { event.stopPropagation(); onOpenSource(path) }} className="shrink-0 text-brand hover:underline">Source</button>}
           {isDependency && (
             <span className="text-sky-600 dark:text-sky-400 font-semibold shrink-0 ml-1">
               [depends on]

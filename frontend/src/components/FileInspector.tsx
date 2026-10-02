@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import type { SourceLocation } from "../types/source"
 import type {
   FileModel,
   RepositoryModel,
@@ -37,6 +38,7 @@ interface FileInspectorProps {
   onTraceFile?: (filePath: string, symbol?: string) => void
   onTraceRoute?: (routeStr: string) => void
   onAnalyzeImpact?: (trigger: { file?: string; symbol?: string; route?: string }) => void
+  onOpenSource?: (location: SourceLocation) => void
 }
 
 export const FileInspector: React.FC<FileInspectorProps> = ({
@@ -52,6 +54,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
   onTraceFile,
   onTraceRoute,
   onAnalyzeImpact,
+  onOpenSource,
 }) => {
   const [showEvidence, setShowEvidence] = useState(false)
   const [expandedEdges, setExpandedEdges] = useState<Record<string, boolean>>({})
@@ -163,6 +166,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenSource && <button onClick={() => onOpenSource({ path: filePath })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">View Source</button>}
           {onTraceFile && (
             <button
               onClick={() => onTraceFile(filePath)}
@@ -321,6 +325,10 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
                       </button>
                     )}
                   </div>
+                  {onOpenSource && route.handler && <button onClick={() => {
+                    const symbol = fileSymbols.find((item) => item.name === route.handler && item.line)
+                    onOpenSource({ path: filePath, ...(symbol?.line ? { startLine: symbol.line, endLine: symbol.line } : {}) })
+                  }} className="text-[10px] text-brand hover:underline">View handler source</button>}
                   {(route.handler || route.framework) && (
                     <div className="flex items-center gap-3 text-[11px] text-ink-tertiary">
                       {route.handler && (
@@ -356,6 +364,10 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-sm text-ink">{modelItem.name}</span>
+                    {onOpenSource && <button onClick={() => {
+                      const symbol = fileSymbols.find((item) => item.name === modelItem.name && item.line)
+                      onOpenSource({ path: filePath, ...(symbol?.line ? { startLine: symbol.line, endLine: symbol.line } : {}) })
+                    }} className="text-[10px] text-brand hover:underline">View model source</button>}
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-surface border border-line text-brand capitalize">
                       {modelItem.framework}
                     </span>
@@ -410,6 +422,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
                     >
                       <ComponentIcon className="h-3 w-3 text-brand" />
                       <span>{s.name}</span>
+                      {onOpenSource && s.line && <button onClick={() => onOpenSource({ path: filePath, startLine: s.line!, endLine: s.line! })} className="text-[10px] text-brand hover:underline">View</button>}
                       {s.line && <span className="text-[10px] text-ink-tertiary">L{s.line}</span>}
                     </span>
                   ))}

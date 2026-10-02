@@ -4,6 +4,7 @@
  * interactive file citations, confidence badges, and evidence summaries.
  */
 
+import type { SourceLocation } from "../../types/source"
 import React, { useState } from "react"
 import type { AskMessage as AskMessageType } from "../../types/qa"
 import { AskCitation } from "./AskCitation"
@@ -11,6 +12,7 @@ import { BotIcon, UserIcon, CheckCircleIcon, ChevronDownIcon, ChevronRightIcon, 
 
 interface AskMessageProps {
   message: AskMessageType
+  onOpenSource?: (location: SourceLocation) => void
   onInspectFile?: (filePath: string) => void
   onShowInGraph?: (filePath: string) => void
   onTraceFlow?: (candidateFiles: string[], query?: string) => void
@@ -199,11 +201,12 @@ function renderInlineFormatting(
 
     const label = match[1]
     const filePath = match[2]
+    const line = match[3] ? Number(match[3]) : undefined
 
     parts.push(
       <button
         key={`link-${match.index}`}
-        onClick={() => onInspectFile?.(filePath)}
+        onClick={() => onInspectFile?.(line ? `${filePath}:${line}` : filePath)}
         className="inline-flex items-center gap-1 font-mono text-[11px] text-brand hover:underline font-semibold bg-brand-surface/40 hover:bg-brand-surface px-1.5 py-0.5 rounded cursor-pointer mx-0.5 transition-colors"
         title={`Inspect ${filePath}`}
       >
@@ -254,6 +257,7 @@ function renderBasicInline(text: string): React.ReactNode {
 export const AskMessage: React.FC<AskMessageProps> = ({
   message,
   onInspectFile,
+  onOpenSource,
   onShowInGraph,
   onTraceFlow,
   onAnalyzeImpact,
@@ -310,7 +314,11 @@ export const AskMessage: React.FC<AskMessageProps> = ({
         <div className="leading-relaxed">
           {isAssistant ? (
             message.content ? (
-              renderGroundedMarkdown(message.content, onInspectFile, onShowInGraph)
+              renderGroundedMarkdown(message.content, (path) => {
+                const match = /^(.*):([1-9]\d*)$/.exec(path)
+                if (match && onOpenSource) onOpenSource({ path: match[1], startLine: Number(match[2]), endLine: Number(match[2]) })
+                else onInspectFile?.(path)
+              }, onShowInGraph)
             ) : message.isStreaming ? (
               <div className="flex items-center gap-2 text-ink-tertiary text-xs italic py-1 animate-pulse">
                 <span>Gathering grounded repository evidence...</span>
@@ -368,6 +376,7 @@ export const AskMessage: React.FC<AskMessageProps> = ({
                   key={idx}
                   citation={c}
                   onInspectFile={onInspectFile}
+                  onOpenSource={onOpenSource}
                   onShowInGraph={onShowInGraph}
                 />
               ))}
