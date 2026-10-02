@@ -1,7 +1,14 @@
 import base64
+import concurrent.futures
 import os
 import requests
 from dotenv import load_dotenv
+from cache_manager import (
+    get_cached_repo_info,
+    set_cached_repo_info,
+    get_cached_tree,
+    set_cached_tree,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Ensure .env from project root is explicitly loaded
@@ -130,7 +137,11 @@ def verify_github_auth():
 
 
 def get_repo_info(owner, repo):
-    """Fetch basic repository information."""
+    """Fetch basic repository information, checking cache first."""
+    cached = get_cached_repo_info(owner, repo)
+    if cached is not None:
+        return cached
+
     url = f"{BASE_URL}/repos/{owner}/{repo}"
     headers = get_headers()
 
@@ -145,17 +156,23 @@ def get_repo_info(owner, repo):
 
     data = response.json()
 
-    return {
+    info = {
         "name": data["name"],
         "description": data.get("description"),
         "stars": data.get("stargazers_count", 0),
         "language": data.get("language"),
         "default_branch": data.get("default_branch", "main"),
     }
+    set_cached_repo_info(owner, repo, info)
+    return info
 
 
 def get_tree(owner, repo, branch):
-    """Fetch the repository's complete file tree."""
+    """Fetch the repository's complete file tree, checking cache first."""
+    cached = get_cached_tree(owner, repo, branch)
+    if cached is not None:
+        return cached
+
     url = f"{BASE_URL}/repos/{owner}/{repo}/git/trees/{branch}"
     params = {"recursive": "1"}
     headers = get_headers()
@@ -177,11 +194,13 @@ def get_tree(owner, repo, branch):
             "The repository may contain too many files."
         )
 
-    return [
+    tree = [
         item["path"]
         for item in data.get("tree", [])
         if item.get("type") == "blob"
     ]
+    set_cached_tree(owner, repo, branch, tree)
+    return tree
 
 
 def get_file_content(owner, repo, path, branch=None):
@@ -210,3 +229,47 @@ def get_file_content(owner, repo, path, branch=None):
         "utf-8",
         errors="replace"
     )
+
+
+def get_files_content_parallel(owner, repo, paths, branch=None, max_workers=5):
+    """
+    Fetch multiple repository files concurrently using ThreadPoolExecutor.
+
+    Guarantees:
+    - Maintains deterministic result ordering matching the input paths list.
+    - Limits concurrency to safe worker count (default 5, max 8) to prevent secondary rate limiting.
+    - Preserves existing get_file_content behavior and exceptions.
+    - Individual file failures (404, binary, decode errors) do not crash the batch.
+    - Deduplicates paths while preserving first-seen order.
+    """
+    if not paths:
+        return {}
+
+    # Deduplicate paths preserving ordering
+    unique_paths = list(dict.fromkeys(paths))
+    safe_workers = min(max(1, max_workers), len(unique_paths), 8)
+
+    def _fetch_single(path):
+        try:
+            content = get_file_content(owner, repo, path, branch=branch)
+            return path, content, None
+        except Exception as exc:
+            return path, None, exc
+
+    raw_results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=safe_workers) as executor:
+        future_map = {executor.submit(_fetch_single, path): path for path in unique_paths}
+        for future in concurrent.futures.as_completed(future_map):
+            path, content, error = future.result()
+            if error is not None:
+                print(f"Could not read {path}: {error}")
+            elif content is not None:
+                raw_results[path] = content
+
+    # Maintain deterministic ordering matching original paths
+    ordered_results = {}
+    for path in unique_paths:
+        if path in raw_results:
+            ordered_results[path] = raw_results[path]
+
+    return ordered_results

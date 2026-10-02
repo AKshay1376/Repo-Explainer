@@ -1,412 +1,319 @@
-# 🚀 GitHub Repo Explainer
+# GitHub Repo Explainer 🚀
 
-> Understand any GitHub repository in seconds.
+> **"Understand any GitHub repository in seconds."**
 
-GitHub Repo Explainer is an AI-powered developer tool that analyzes a GitHub repository and generates a structured explanation of its **architecture, technology stack, file responsibilities, and key implementation details**.
-
-Instead of manually going through hundreds of files, you can provide a GitHub repository URL and get a concise, evidence-based explanation of how the project works.
+**GitHub Repo Explainer** is a production-grade developer tool that transforms public GitHub repositories into structured, evidence-grounded technical reports. It analyzes architecture, technology stacks, entry points, and component responsibilities using compact, secret-sanitized repository evidence synthesized by an LLM.
 
 ---
 
-## ✨ What It Does
+## 🌟 Key Features
 
-GitHub Repo Explainer takes a public GitHub repository and:
-
-- 🔗 Accepts a GitHub repository URL
-- 📂 Analyzes the repository file structure
-- 🧠 Detects the project's technology stack
-- 🗂️ Summarizes folders and important files
-- 🎯 Selects key source files for deeper inspection
-- 🔍 Reads relevant source-code files
-- 🤖 Uses AI to explain the repository
-- 📊 Generates a structured technical report
-- 🔐 Applies security-aware handling to repository contents
-
-The goal is simple:
-
-**Turn an unfamiliar codebase into something you can understand quickly.**
+* **Grounded AI Explanations**: Generates architecture breakdowns, execution workflows, file responsibilities, and key insights strictly categorized as **FACT**, **INFERENCE**, or **RECOMMENDATION**.
+* **Evidence-Grounded Fallback**: If OpenAI API quota is exhausted or temporarily unavailable, automatically synthesizes a structured, evidence-grounded report directly from inspected source files without failing or showing a blank page.
+* **Warp Stripes WebGL Hero**: Custom, high-performance WebGL shader canvas with DPR limiting, reduced-motion awareness, viewport pausing via `IntersectionObserver`, and graceful CSS gradient fallbacks.
+* **Architecture-Aware Scoring**: Automatically pinpoints entry points (`main.py`, `app.js`, `package.json`, etc.) and core source folders while filtering out test fixtures, examples, and minified bundles.
+* **Zero-Leakage Security Engine**:
+  * Strips sensitive files (`.env`, `*.pem`, `id_rsa`, etc.) before analysis.
+  * Redacts secret keys, API tokens, and passwords (`[REDACTED SECRET]`).
+  * Enforces strict character quotas (max 6,000 chars per file) to prevent prompt overflows.
+  * Treats all repository content strictly as **untrusted data** to prevent prompt injection and SSRF.
+  * Sanitizes Markdown rendering with strict XSS protections.
+* **Developer-Focused Dashboard**:
+  * Real-time metadata cards (stars, primary language, branch).
+  * Detected tech stack badges and inspected file pills.
+  * Interactive project structure viewer.
+  * One-click clipboard copying and clean Markdown report downloads.
 
 ---
 
-## 🧠 How It Works
+## 🏛️ System Architecture
 
-The project follows a multi-stage analysis pipeline:
+The application adopts a decoupled architecture: a modern React + TypeScript single-page application served directly by an environment-aware Flask REST API, preserving the working Python analysis engine.
 
-```text
-GitHub Repository URL
-        │
-        ▼
-   GitHub API
-        │
-        ├── Repository metadata
-        └── Repository file tree
-        │
-        ▼
- Local Repository Analysis
-        │
-        ├── Technology detection
-        ├── Folder analysis
-        └── Key-file selection
-        │
-        ▼
- Fetch Selected Source Files
-        │
-        ▼
- Security / Secret Sanitization
-        │
-        ▼
-      AI Analysis
-        │
-        ▼
- Structured Markdown Report
+```
+                    ┌────────────────────────────┐
+                    │   React 18 + TypeScript    │
+                    │   (Tailwind CSS + Shader)  │
+                    └─────────────┬──────────────┘
+                                  │ HTTP / JSON
+                                  ▼
+                    ┌────────────────────────────┐
+                    │      web_app.py (Flask)    │
+                    │    (/api/analyze, /api/dl) │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │      main.py (Pipeline)    │
+                    └─────────────┬──────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          ▼                       ▼                       ▼
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│ github_client.py │    │   analyzer.py    │    │   security.py    │
+│ (GitHub REST API)│    │(Stack & Scoring) │    │ (Redact & Limits)│
+└──────────────────┘    └──────────────────┘    └──────────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │     report_builder.py      │
+                    │ (Evidence Prompt + OpenAI) │
+                    └────────────────────────────┘
 ```
 
-Only selected files are sent for deeper AI analysis instead of blindly sending an entire repository.
-
 ---
 
-## 🏗️ Architecture
+## 🔄 Analysis Pipeline
 
-```text
-React + TypeScript Frontend
-             │
-             ▼
-          Flask API
-             │
-             ▼
-    Python Analysis Engine
-             │
-       ┌─────┴─────┐
-       ▼           ▼
- GitHub API      AI Model
-       │
-       ▼
- Repository Data
 ```
-
-The Python backend remains responsible for repository analysis while the frontend provides the user-facing experience.
-
----
-
-## 🛠️ Tech Stack
-
-### Backend
-
-- Python
-- Flask
-- Requests
-- OpenAI API
-- python-dotenv
-
-### Frontend
-
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- UI components
-
-### APIs
-
-- GitHub REST API
-- OpenAI API
+GitHub URL
+    │
+    ▼
+Strict Regex & Domain Validation (security.py)
+    │
+    ▼
+Repository Metadata & Git Tree (github_client.py)
+    │
+    ▼
+Technology Detection & Heuristic Key File Scoring (analyzer.py)
+    │
+    ▼
+Selective File Fetching (github_client.py)
+    │
+    ▼
+Secret Redaction & Size Limiting (security.py)
+    │
+    ▼
+Evidence-Grounded Prompting (report_builder.py)
+    │
+    ▼
+OpenAI LLM Synthesis
+    │
+    ▼
+Markdown Report Generation & Dashboard Rendering
+```
 
 ---
 
 ## 📁 Project Structure
 
-```text
+```
 repo-explainer/
+├── analyzer.py               # Tech detection, folder summary & key-file scoring
+├── github_client.py          # GitHub REST API client (metadata, tree, file content)
+├── main.py                   # Analysis pipeline orchestrator & CLI entry point
+├── report_builder.py         # Evidence-based prompt crafting & OpenAI client
+├── security.py               # Secret redaction, sensitive file filtering & URL validation
+├── web_app.py                # Flask web server, JSON REST API & static SPA server
+├── requirements.txt          # Python dependencies
+├── .env.example              # Environment variables template
+├── .gitignore                # Git exclusions
+├── README.md                 # Project documentation
 │
-├── frontend/
-│   └── React frontend
-│
-├── main.py
-│   └── Main repository analysis pipeline
-│
-├── github_client.py
-│   └── GitHub API communication
-│
-├── analyzer.py
-│   └── Technology detection,
-│       folder analysis and key-file selection
-│
-├── report_builder.py
-│   └── AI analysis and report generation
-│
-├── security.py
-│   └── Secret detection and content sanitization
-│
-├── web_app.py
-│   └── Flask web application / API layer
-│
-├── test_github.py
-│   └── GitHub API testing
-│
-├── requirements.txt
-│   └── Python dependencies
-│
-├── .env.example
-│   └── Environment variable template
-│
-├── .gitignore
-│
-└── README.md
+└── frontend/                 # React + TypeScript + Tailwind CSS application
+    ├── package.json          # Node dependencies & scripts
+    ├── tsconfig.json         # TypeScript configuration
+    ├── vite.config.ts        # Vite configuration with API proxy
+    ├── tailwind.config.js    # Tailwind developer dark aesthetic palette
+    ├── index.html            # SPA HTML entry point
+    └── src/
+        ├── main.tsx          # React application root
+        ├── App.tsx           # State coordinator
+        ├── index.css         # Tailwind base and report typography
+        └── components/
+            ├── Navbar.tsx             # Header bar
+            ├── Hero.tsx               # Landing hero with Warp Stripes shader
+            ├── LoadingState.tsx       # Truthful animated pipeline execution view
+            ├── Dashboard.tsx          # Repository metrics, tech badges & actions
+            ├── ReportView.tsx         # Safe Markdown renderer with evidence badges
+            ├── ErrorBanner.tsx        # Sanitized user-friendly error banners
+            └── ui/
+                ├── warp-stripes-shader.tsx  # WebGL Warp Stripes Shader component
+                └── icons.tsx                # Developer interface icons
 ```
 
 ---
 
-## ⚙️ Installation
+## ⚙️ Prerequisites
 
-### 1. Clone the repository
+1. **Python 3.10+**
+2. **Node.js 18+** & **npm** (for building the frontend)
+3. **OpenAI API Key** (required for AI report generation)
+4. **GitHub Personal Access Token** *(Optional, recommended to raise rate limits from 60 to 5,000 requests/hour)*
 
-```bash
-git clone https://github.com/AKshay1376/Repo-Explainer.git
-cd Repo-Explainer
-```
+---
 
-### 2. Create a Python virtual environment
+## 🚀 Getting Started
 
-```bash
-python -m venv venv
-```
+### 1. Clone & Configure Environment
 
-Activate it on Windows:
+Copy `.env.example` to `.env`:
 
 ```bash
-venv\Scripts\activate
+cp .env.example .env
 ```
 
-On macOS / Linux:
+Edit `.env` and configure your credentials (**CRITICAL**: Never commit or push `.env` to Git; it is strictly excluded by `.gitignore`):
 
-```bash
-source venv/bin/activate
+```env
+# OpenAI API Key (Required for AI explanations)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# GitHub Personal Access Token (Optional, increases rate limit from 60 to 5,000 requests/hr)
+GITHUB_TOKEN=your_github_token_here
+
+# Model Selection (Default is gpt-4o-mini with gpt-4o fallback)
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_CHAT_MODEL=gpt-4o
+
+# Server Configuration
+FLASK_ENV=production
+FLASK_DEBUG=0
+PORT=5000
 ```
 
-### 3. Install Python dependencies
+### 2. Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Install frontend dependencies
+### 3. Build the Frontend
 
 ```bash
 cd frontend
 npm install
+npm run build
 cd ..
 ```
 
----
+The compiled assets will be placed in `frontend/dist/`. Flask automatically serves these static assets on `http://127.0.0.1:5000`.
 
-## 🔑 Environment Variables
+### 4. Run the Application
 
-Create a `.env` file in the project root using `.env.example` as a reference.
-
-```env
-GITHUB_TOKEN=your_github_token
-OPENAI_API_KEY=your_openai_api_key
-```
-
-Use the model configuration supported by the current application code/environment.
-
-### ⚠️ Keep secrets private
-
-Never commit `.env`, API keys, GitHub tokens, private keys, or other credentials to the repository.
-
-A GitHub token is recommended for avoiding the lower unauthenticated GitHub API rate limits.
-
----
-
-## ▶️ Run Locally
-
-### Start the Flask backend
-
-From the project root:
+Start the production server:
 
 ```bash
 python web_app.py
 ```
 
-The backend will run on the configured local port, typically:
-
-```text
+Open your browser and navigate to:
+```
 http://127.0.0.1:5000
 ```
 
-### Start the frontend
+---
 
-In a second terminal:
+## 💻 CLI Usage
+
+You can also run the analysis directly from the command line:
 
 ```bash
-cd frontend
-npm run dev
+python main.py https://github.com/psf/requests
 ```
 
-Open the local frontend URL shown by Vite in your browser.
+The report will be output to your terminal and saved to `report.md`.
 
 ---
 
-## 🌐 Using the Application
+## 🧑‍💻 Frontend Development Mode
 
-1. Open the web application.
-2. Enter a public GitHub repository URL.
+To work on the frontend with live Hot Module Replacement (HMR):
 
-Example:
-
-```text
-https://github.com/psf/requests
-```
-
-3. Click **Analyze Repository**.
-4. The backend retrieves repository metadata and its file tree.
-5. The local analyzer identifies important files and the technology stack.
-6. Selected source files are fetched and sanitized.
-7. AI generates an evidence-grounded explanation.
-8. The structured report is returned to the application.
+1. Start the Flask backend on port 5000:
+   ```bash
+   FLASK_ENV=development python web_app.py
+   ```
+2. In a separate terminal, start the Vite development server:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+3. Open `http://localhost:5173`. Vite is pre-configured to proxy all `/api/*` requests to the Flask server at `http://127.0.0.1:5000`.
 
 ---
 
-## 📊 Generated Analysis
+## 🔌 API Reference
 
-The generated report is organized around several areas:
+### `POST /api/analyze`
+Analyzes a GitHub repository and returns metadata, architecture insights, and Markdown report.
 
-### 🧠 AI Overview
+* **Request Body**:
+  ```json
+  {
+    "url": "https://github.com/psf/requests"
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "info": {
+      "name": "requests",
+      "description": "A simple, yet elegant, HTTP library.",
+      "stars": 54301,
+      "language": "Python",
+      "default_branch": "main"
+    },
+    "tech_stack": ["CSS", "HTML", "Python"],
+    "folder_summary": { ... },
+    "key_files": ["src/requests/utils.py", "pyproject.toml", ...],
+    "report": "# requests — Repository Explanation\n..."
+  }
+  ```
+* **Error Response (`400 / 404 / 429 / 500`)**:
+  ```json
+  {
+    "success": false,
+    "error": "Human-readable error description"
+  }
+  ```
 
-A high-level explanation of what the repository does.
+### `GET /api/health`
+Health check endpoint returning service status.
 
-### 🏗️ How It Works
+* **Response (`200 OK`)**:
+  ```json
+  {
+    "status": "ok",
+    "product": "GitHub Repo Explainer",
+    "tagline": "Understand any GitHub repository in seconds."
+  }
+  ```
 
-A step-by-step explanation of the repository's execution flow based on the inspected code.
+### `POST /api/download`
+Streams the generated Markdown report as a downloadable `.md` file attachment.
 
-### 🔗 File Responsibilities
-
-Explains the purpose of important files and how they relate to one another.
-
-### 💡 Key Technical Insights
-
-Highlights implementation details found in the inspected source code.
-
-### ⚠️ Potential Improvements
-
-Identifies observations and recommendations while avoiding unsupported claims about the repository.
-
----
-
-## 🎯 Evidence-Based AI Analysis
-
-A core design goal is to make repository explanations grounded in available evidence rather than guesses.
-
-The analysis distinguishes between:
-
-```text
-FACT
-    Directly supported by repository evidence.
-
-INFERENCE
-    A reasonable conclusion derived from available evidence.
-
-RECOMMENDATION
-    A suggested improvement or consideration.
-```
-
-The AI is instructed not to invent:
-
-- functionality
-- architecture
-- APIs
-- dependencies
-- algorithms
-- vulnerabilities
-
-A filename alone is not treated as proof of what a file does.
-
----
-
-## 🔐 Security
-
-Repository source code is treated as **untrusted input**.
-
-The project includes security-oriented handling such as:
-
-- Sensitive-file filtering
-- Secret-pattern detection
-- Content sanitization
-- Content-size limits
-- Protection against accidentally sending obvious credentials to the AI
-- Environment-secret separation
-- Security-aware AI prompting
-- Safe handling of generated report content
-
-### Important
-
-Never commit:
-
-```text
-.env
-API keys
-GitHub tokens
-private keys
-other credentials
-```
-
-Use `.env.example` for documenting required environment variables.
+* **Request Body**:
+  ```json
+  {
+    "name": "requests",
+    "report": "# requests — Repository Explanation\n..."
+  }
+  ```
+* **Response**: Markdown file attachment (`Content-Disposition: attachment; filename="requests-explanation.md"`).
 
 ---
 
-## 🧪 Testing
+## 🔒 Security Principles
 
-The repository analysis pipeline has been tested against public repositories including:
-
-```text
-https://github.com/psf/requests
-https://github.com/pallets/flask
-https://github.com/expressjs/express
-```
-
-The analyzer can also process other public GitHub repositories supported by the GitHub API.
+* **Untrusted Code Execution Prevention**: Repository contents are treated strictly as data evidence. System prompts contain explicit instructions forbidding execution or compliance with instructions contained within repository files.
+* **Secret Protection**: API keys, tokens, `.env` entries, and private SSH keys are identified and redacted before prompt assembly.
+* **XSS Neutralization**: Markdown rendering strictly sanitizes link protocols and parses HTML elements safely without arbitrary JavaScript execution.
+* **SSRF Mitigation**: Input URLs are strictly validated against GitHub's official domain and standard repository slug pattern before issuing network requests.
+* **Production Error Masking**: Internal stack traces and credential-leaking errors are confined to server logs; user-facing responses contain sanitized status messages.
 
 ---
 
-## 🚧 Future Improvements
+## 🤝 Contributing
 
-The current version is functional, with further improvements planned around:
-
-- 📌 Deeper dependency analysis
-- 🌳 Interactive repository architecture graphs
-- 🔍 Advanced code navigation
-- 📈 Repository complexity metrics
-- 💬 Interactive follow-up questions about analyzed repositories
-- 📥 Additional report export formats
-- ⚡ Improved caching and performance
-- 🔐 Additional security protections
-
----
-
-## 👨‍💻 Author
-
-**Akshay Kumar Niraj**
-
-GitHub: [AKshay1376](https://github.com/AKshay1376)
-
----
-
-## ⭐ Project Goal
-
-The long-term goal of GitHub Repo Explainer is to make unfamiliar codebases easier to understand.
-
-Whether you're:
-
-- learning a new project,
-- joining an existing codebase,
-- reviewing open-source software,
-- preparing for an interview, or
-- trying to understand how a repository works,
-
-**GitHub Repo Explainer gives you a clear starting point.**
+Contributions are welcome! Please follow these guidelines:
+1. Preserve existing scoring heuristics and secret-redaction rules.
+2. Ensure any new dependencies are justified and minimal.
+3. Test with both small and large public repositories before submitting pull requests.
 
 ---
 
 ## 📄 License
 
-No license has been added to the repository yet.
+MIT License. See `LICENSE` for details.

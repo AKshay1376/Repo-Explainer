@@ -1,0 +1,397 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Apple-inspired Warm Light Neutral Palette */
+    --color-canvas: #FAF9F6;           /* warm off-white / ivory */
+    --color-canvas-subtle: #F2EFE9;    /* slightly warmer neutral */
+    --color-surface: #FFFFFF;
+    --color-surface-raised: #FFFFFF;
+    --color-surface-inset: #F7F5F0;    /* warm neutral inset */
+    --color-surface-tint: rgba(255, 92, 32, 0.035); /* extremely subtle warm orange tint */
+
+    /* Typography Hierarchy */
+    --color-ink: #1D1D1F;
+    --color-ink-body: #3A3A3C;
+    --color-ink-secondary: #6E6E73;
+    --color-ink-tertiary: #8E8E93;
+    --color-ink-inverted: #FFFFFF;
+
+    /* Borders & Dividers */
+    --color-border: #DCD9D2;
+    --color-border-subtle: #E8E5DE;
+
+    /* Orange Brand Semantic System (#FF5C20 / rgb(255, 92, 32)) */
+    --brand: #FF5C20;
+    --brand-hover: #E64C12;
+    --brand-active: #CC3F0A;
+    --brand-soft: rgba(255, 92, 32, 0.08);
+    --brand-muted: rgba(255, 92, 32, 0.14);
+    --brand-border: rgba(255, 92, 32, 0.24);
+    --brand-border-subtle: rgba(255, 92, 32, 0.10);
+    --brand-surface: rgba(255, 92, 32, 0.035);
+    --brand-text: #C43805;
+    --brand-glow: 0 0 60px rgba(255, 92, 32, 0.08);
+
+    /* Backwards compatibility with --color-accent references */
+    --color-accent: var(--brand);
+    --color-accent-hover: var(--brand-hover);
+    --color-accent-subtle: var(--brand-soft);
+    --color-accent-text: var(--brand-text);
+
+    /* Inputs, Buttons, & Overlays */
+    --color-input-bg: #FFFFFF;
+    --color-button-primary-bg: #FF5C20;
+    --color-button-primary-text: #FFFFFF;
+    --color-button-primary-hover: #E64C12;
+    --color-pill-bg: #FFFFFF;
+    --color-pill-border: #E8E5DE;
+    --color-pill-hover: #F7F5F0;
+    --color-tag-bg: #F5F3ED;
+    --color-tag-border: #DCD9D2;
+    --color-code-inline-bg: #ECE9E2;
+    --color-code-inline-border: #DCD7CE;
+    --color-code-inline-text: #1A1A1C;
+    --color-nav-bg: rgba(250, 249, 246, 0.82);
+    --color-nav-border: rgba(255, 92, 32, 0.08);
+    --color-modal-bg: #FFFFFF;
+
+    /* Apple Glass Material Tokens - Light (with subtle brand border tint) */
+    --color-glass-nav-top: rgba(250, 249, 246, 0.76);
+    --color-glass-nav-scrolled: rgba(250, 249, 246, 0.88);
+    --color-glass-nav-border: rgba(255, 92, 32, 0.08);
+
+    --color-glass-surface: rgba(255, 255, 255, 0.86);
+    --color-glass-surface-border: rgba(255, 92, 32, 0.10);
+    --color-glass-surface-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(255, 92, 32, 0.04);
+
+    --color-glass-control: rgba(255, 255, 255, 0.78);
+    --color-glass-control-hover: rgba(255, 255, 255, 0.96);
+    --color-glass-control-border: rgba(0, 0, 0, 0.08);
+
+    --glass-blur: blur(18px) saturate(140%);
+    --glass-blur-sm: blur(12px) saturate(135%);
+  }
+
+  /* Dark Mode: Deep charcoal base with controlled warm accents and orange highlights */
+  .dark {
+    --color-canvas: #131215;           /* warm deep charcoal base */
+    --color-canvas-subtle: #19181C;    /* slightly warm secondary canvas */
+    --color-surface: #1D1C20;          /* slightly warm elevated surface */
+    --color-surface-raised: #252429;
+    --color-surface-inset: #161519;
+    --color-surface-tint: rgba(255, 92, 32, 0.05); /* controlled warm illumination */
+
+    /* High contrast off-white and readable warm grays */
+    --color-ink: #F7F7F8;
+    --color-ink-body: #EEEEF0;
+    --color-ink-secondary: #CECED4;
+    --color-ink-tertiary: #A5A5AD;
+    --color-ink-inverted: #131215;
+
+    /* Crisp structural dividers with faint warm tint */
+    --color-border: #3D3B42;
+    --color-border-subtle: #2C2B30;
+
+    /* Orange Brand Semantic System - Dark Mode */
+    --brand: #FF5C20;
+    --brand-hover: #FF733B;
+    --brand-active: #FF4A08;
+    --brand-soft: rgba(255, 92, 32, 0.14);
+    --brand-muted: rgba(255, 92, 32, 0.22);
+    --brand-border: rgba(255, 92, 32, 0.26);
+    --brand-border-subtle: rgba(255, 92, 32, 0.12);
+    --brand-surface: rgba(255, 92, 32, 0.05);
+    --brand-text: #FF8554;
+    --brand-glow: 0 0 60px rgba(255, 92, 32, 0.14);
+
+    /* Backwards compatibility with --color-accent references */
+    --color-accent: var(--brand);
+    --color-accent-hover: var(--brand-hover);
+    --color-accent-subtle: var(--brand-soft);
+    --color-accent-text: var(--brand-text);
+
+    /* Inputs, Buttons, & Overlays */
+    --color-input-bg: #1D1C20;
+    --color-button-primary-bg: #FF5C20;
+    --color-button-primary-text: #FFFFFF;
+    --color-button-primary-hover: #FF733B;
+    --color-pill-bg: #1D1C20;
+    --color-pill-border: #3D3B42;
+    --color-pill-hover: #28262C;
+    --color-tag-bg: #1D1C20;
+    --color-tag-border: #3D3B42;
+    --color-code-inline-bg: #25242A;
+    --color-code-inline-border: #3D3B42;
+    --color-code-inline-text: #F7F7F8;
+    --color-nav-bg: rgba(19, 18, 21, 0.82);
+    --color-nav-border: rgba(255, 92, 32, 0.12);
+    --color-modal-bg: #1D1C20;
+
+    /* Apple Glass Material Tokens - Dark (with subtle brand border tint) */
+    --color-glass-nav-top: rgba(19, 18, 21, 0.72);
+    --color-glass-nav-scrolled: rgba(20, 19, 23, 0.86);
+    --color-glass-nav-border: rgba(255, 92, 32, 0.12);
+
+    --color-glass-surface: rgba(26, 25, 29, 0.86);
+    --color-glass-surface-border: rgba(255, 92, 32, 0.14);
+    --color-glass-surface-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 92, 32, 0.08);
+
+    --color-glass-control: rgba(33, 31, 37, 0.74);
+    --color-glass-control-hover: rgba(43, 40, 48, 0.92);
+    --color-glass-control-border: rgba(255, 92, 32, 0.12);
+
+    --glass-blur: blur(18px) saturate(140%);
+    --glass-blur-sm: blur(12px) saturate(135%);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow-x: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  ::selection {
+    background-color: rgba(47, 179, 109, 0.25);
+    color: #68E19F;
+  }
+
+  /* Accessible focus indicators */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Restrained scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-tertiary);
+}
+
+/* Refined Markdown report typography */
+.report-content {
+  color: var(--color-ink);
+  line-height: 1.65;
+}
+
+.report-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  color: var(--color-ink);
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 0.6rem;
+}
+
+.report-content h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-ink);
+}
+
+.report-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1.4rem;
+  margin-bottom: 0.5rem;
+  color: #2C2C2E;
+}
+
+.report-content p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.85rem;
+  line-height: 1.68;
+  color: #3A3A3C;
+}
+
+.report-content ul {
+  list-style-type: disc;
+  padding-left: 1.4rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.85rem;
+  color: #3A3A3C;
+}
+
+.report-content ol {
+  list-style-type: decimal;
+  padding-left: 1.4rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.85rem;
+  color: #3A3A3C;
+}
+
+.report-content li {
+  margin-bottom: 0.35rem;
+  line-height: 1.62;
+}
+
+.report-content code:not(pre code) {
+  font-family: var(--font-mono, monospace);
+  background-color: #ECECEE;
+  color: #1A1A1C;
+  padding: 0.15rem 0.38rem;
+  border-radius: 0.35rem;
+  font-size: 0.86em;
+  font-weight: 500;
+  border: 1px solid #DCDCDE;
+  word-break: break-word;
+}
+
+.report-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-word;
+  transition: color 0.15s ease;
+}
+.report-content a:hover {
+  color: var(--color-accent-hover);
+}
+
+.report-content pre {
+  background-color: #18181B;
+  border: 1px solid #27272A;
+  border-radius: 0.75rem;
+  padding: 1.1rem;
+  overflow-x: auto;
+  margin-top: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.report-content pre code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  color: #F4F4F5;
+  line-height: 1.55;
+}
+
+.report-content blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1.1rem;
+  color: var(--color-ink-secondary);
+  margin-top: 0.85rem;
+  margin-bottom: 0.85rem;
+  font-style: normal;
+  background: var(--color-accent-subtle);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 0.75rem 1rem;
+}
+
+.report-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.88rem;
+}
+
+.report-content th, .report-content td {
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+}
+
+.report-content th {
+  background-color: var(--color-surface-inset);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Apple Glass Material Utilities & Fallbacks
+   ========================================================================== */
+
+.apple-glass-nav-top {
+  background-color: var(--color-glass-nav-top);
+  border-bottom: 1px solid var(--color-glass-nav-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.apple-glass-nav {
+  background-color: var(--color-glass-nav-scrolled);
+  border-bottom: 1px solid var(--color-glass-nav-border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.apple-glass-panel {
+  background-color: var(--color-glass-surface);
+  border: 1px solid var(--color-glass-surface-border);
+  box-shadow: var(--color-glass-surface-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.apple-glass-control {
+  background-color: var(--color-glass-control);
+  border: 1px solid var(--color-glass-control-border);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.15s ease;
+}
+
+.apple-glass-control:hover {
+  background-color: var(--color-glass-control-hover);
+  border-color: var(--brand-border);
+}
+
+.apple-glass-control:active {
+  transform: scale(0.98);
+}
+
+/* Graceful opaque fallback for environments without backdrop-filter support */
+@supports not (backdrop-filter: blur(10px)) {
+  .apple-glass-nav-top,
+  .apple-glass-nav {
+    background-color: var(--color-canvas);
+  }
+  .apple-glass-panel {
+    background-color: var(--color-surface);
+  }
+  .apple-glass-control {
+    background-color: var(--color-surface-raised);
+  }
+}
+
+

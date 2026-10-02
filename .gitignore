@@ -1,0 +1,86 @@
+# Environment and Secrets (CRITICAL: Never commit .env or secrets)
+.env
+.env.*
+!.env.example
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# SSH Keys
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+dist/
+build/
+.npm
+*.tsbuildinfo
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local reports
+report.md
+*-report.md
+
+# Coverage and temporary files
+coverage/
+htmlcov/
+.coverage*
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.log
+
+# Credential and token files
+credentials/
+*credentials*.json
+secrets/
+.secrets*
+*.secret
+*.secrets
+*.token
+*.tokens
+token.txt
+tokens.txt
+token.json
+tokens.json
+api-key.*
+api_key.*
+apikey.*
+.npmrc
+.netrc
+.pypirc
+*.p8
+*.jks
+*.keystore
+
+# Additional IDE state
+.vs/
