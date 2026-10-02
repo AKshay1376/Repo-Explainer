@@ -10,6 +10,7 @@ import { SourceHeader } from "./SourceHeader"
 import { SourceOutline } from "./SourceOutline"
 import { SourceSearch } from "./SourceSearch"
 import { canCreatePatchFromSource } from "../../lib/patchSource"
+import type { ValidatorResult } from "../../types/validators"
 
 interface SourceViewerProps {
   repoUrl: string
@@ -31,6 +32,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
   const [activeMatch, setActiveMatch] = useState(0)
   const [showGenerated, setShowGenerated] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const [lastValidation, setLastValidation] = useState<ValidatorResult | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const lastNavigation = useRef<string>("")
   const ref = model.metadata.latest_commit_sha || model.metadata.default_branch
@@ -42,6 +44,15 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
 
   useEffect(() => { setActiveMatch(0) }, [query, caseSensitive, path])
   useEffect(() => { setShowGenerated(false) }, [path])
+  useEffect(() => {
+    if (!visible || !path) return
+    let active = true
+    void fetch(`/api/validators/history?repo_url=${encodeURIComponent(repoUrl)}`)
+      .then((response) => response.json())
+      .then((result) => { if (active) setLastValidation((result.history || []).find((item: ValidatorResult) => item.paths?.includes(path)) || null) })
+      .catch(() => { if (active) setLastValidation(null) })
+    return () => { active = false }
+  }, [visible, path, repoUrl])
   useEffect(() => {
     if (!visible || !file || !viewport.current || !location || file.path !== location.path) return
     const navigationKey = `${location.path}|${location.requestId || 0}`
@@ -97,6 +108,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
       : file && location ? <>
         <SourceHeader file={file} location={location} githubUrl={githubUrl} copied={copied}
           onCopyPath={() => copy("path", file.path)} onCopyLines={() => copy("lines", selection)} onCopyReference={() => copy("reference", reference)} />
+        <p className="px-5 py-2 text-xs text-ink-secondary">Validation status: {lastValidation ? `${lastValidation.state} · ${lastValidation.command_id} · ${lastValidation.timestamp}` : "Not run for this file"}</p>
         {invalidLine && <p className="px-5 py-2 text-xs text-amber-600">Requested line {location.startLine} is outside this file ({file.line_count} lines).</p>}
         {file.redacted && !file.is_sensitive && <p className="px-5 py-2 text-xs text-amber-600">Some sensitive values in this file were redacted before display.</p>}
         {file.is_sensitive ? <p className="p-8 text-sm text-ink-secondary">This sensitive file is redacted. Its contents cannot be displayed or copied.</p>

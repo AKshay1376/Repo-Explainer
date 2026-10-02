@@ -64,6 +64,15 @@ export const usePatchEngine = (repoUrl: string, model: RepositoryModel) => {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Grouped patch generation failed.") }
     finally { setLoading(false) }
   }, [repoUrl, model, refreshHistory])
+  const generateVerified = useCallback(async (path: string, transformation: string, options: Record<string, unknown> = {}) => {
+    setLoading(true); setError(null); setValidation(null); setSelectedDiff(null)
+    try {
+      const result = await post<PatchSet>("/api/patch/verified", { repo_url: repoUrl, path, transformation, options,
+        ref: model.metadata.latest_commit_sha || model.metadata.default_branch })
+      setPatch(result); setHistorical(null); await refreshHistory()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Verified preview failed.") }
+    finally { setLoading(false) }
+  }, [repoUrl, model, refreshHistory])
   const validate = useCallback(async (selectedHunks: string[]) => {
     if (!patch) return
     setLoading(true); setError(null)
@@ -142,5 +151,5 @@ export const usePatchEngine = (repoUrl: string, model: RepositoryModel) => {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load patch.") }
     finally { setLoading(false) }
   }, [])
-  return { patch, historical, history, loading, error, validation, selectedDiff, postImpact, setValidation, setSelectedDiff, generate, generateGroup, generateAi, validate, apply, accept, reject, reanalyzeImpact, rollbackId, load, refreshHistory }
+  return { patch, historical, history, loading, error, validation, selectedDiff, postImpact, setValidation, setSelectedDiff, generate, generateGroup, generateVerified, generateAi, validate, apply, accept, reject, reanalyzeImpact, rollbackId, load, refreshHistory }
 }

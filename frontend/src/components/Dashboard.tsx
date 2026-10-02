@@ -61,6 +61,7 @@ const RefactorPlannerView = React.lazy(() => import("./RefactorPlanner/RefactorP
 const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((module) => ({ default: module.HumanizeView })))
 const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then((module) => ({ default: module.SourceViewer })))
 const PatchReviewView = React.lazy(() => import("./PatchReview/PatchReviewView").then((module) => ({ default: module.PatchReviewView })))
+const ValidationView = React.lazy(() => import("./Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -87,12 +88,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch">(
+  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
     repository_model ? "explorer" : "report"
   )
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "explorer" : "report"]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch") => {
+  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
@@ -516,6 +517,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           <button onClick={() => navigateTab("refactor")} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-ink-secondary hover:text-ink"><WorkflowIcon className="h-4 w-4 text-brand" /><span>Refactor Planner</span></button>
           <button onClick={() => navigateTab("patch")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "patch" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CodeIcon className="h-4 w-4 text-brand" /><span>Patch Review</span></button>
+          <button onClick={() => navigateTab("validation")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "validation" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CheckIcon className="h-4 w-4 text-brand" /><span>Validation</span></button>
 
           <button
             onClick={() => navigateTab("report")}
@@ -593,6 +595,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <PatchReviewView repoUrl={repoUrl} model={repository_model} trigger={patchTrigger}
             onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
             onOpenSource={(path) => openSource({ path })} />
+        </React.Suspense>
+      </div>}
+      {repository_model && visitedTabs.has("validation") && <div hidden={activeTab !== "validation"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Validation…</p>}>
+          <ValidationView repoUrl={repoUrl} paths={selectedFile ? [selectedFile] : []} />
         </React.Suspense>
       </div>}
       {activeTab === "report" && <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card"><ReportView reportMarkdown={report} /></div>}

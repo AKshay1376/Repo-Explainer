@@ -34,4 +34,5 @@ export const canApplyPatch = (patch: PatchSet | null, selected: string[], valida
   (validation?.state === "PASSED" || validation?.state === "PARTIAL") && confirmApply &&
   (patch.risk_level !== "HIGH" || highRisk) &&
   (!patch.files.some((file) => file.public_api_change) || publicApi)
+  && (!(patch.source === "planner" || patch.source === "verified") || (patch.confidence ?? "HIGH") === "HIGH")
 )

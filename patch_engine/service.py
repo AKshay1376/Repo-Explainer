@@ -5,19 +5,21 @@ import os
 import re
 import subprocess
 import threading
-import sys
 import time
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 from .applier import ApplyFailure, apply_files
 from .diff_utils import digest, unified
-from .generator import build_file, humanize_file, planner_file, selected_range
+from .generator import (build_file, humanize_file, planner_file, selected_range,
+                        move_python_file, compatibility_reexport, import_consolidation,
+                        compatibility_wrapper, extract_pure_assignment, create_file, delete_file)
+from .generator import move_python_module_group
 from .models import PatchSet
 from .rollback import restore, safe_store
 from .validator import safe_target, syntax_check, validate_selection
+from validators import ValidatorService
 
 MAX_FILES = 20
 MAX_CHANGED_LINES = 1500
@@ -62,46 +64,34 @@ class PatchService:
                 "diff_stat": (_git(self.root, "diff", "--stat") or "")[:2000],
                 "commit_status": "uncommitted" if status else "clean"}
 
-    def _trusted_checks(self) -> list[dict]:
-        """Fixed commands for this project only; caller must opt in after root verification."""
-        try:
-            scripts = json.loads((self.root / "frontend" / "package.json").read_text(encoding="utf-8"))["scripts"]
-        except (OSError, ValueError, KeyError, TypeError):
-            scripts = {}
-        expected = {
-            "test": "tsx --test src/tests/inspector.test.js src/tests/graph.test.ts src/tests/ask_repo.test.ts src/tests/trace.test.ts src/tests/impact.test.ts src/tests/source.test.ts src/tests/humanize.test.ts src/tests/refactor.test.ts src/tests/patch.test.ts",
-            "build": "tsc && vite build",
-        }
-        if any(scripts.get(name) != command for name, command in expected.items()):
-            return [{"state": "NOT_RUN", "command": "Repo Explainer trusted script check",
-                     "exit_code": None, "duration_seconds": 0,
-                     "output_summary": "Package scripts changed; explicit manual validation is required."}]
-        commands = [
-            ([sys.executable, "-B", "-m", "unittest", "-q", "test_architecture_engine", "test_ask_repo",
-              "test_change_impact", "test_execution_trace", "test_performance_and_cache",
-              "test_repository_intelligence", "test_source_service", "test_humanize",
-              "test_refactor_planner", "test_patch_engine"], self.root),
-            ([shutil.which("npm") or "npm", "test"], self.root / "frontend"),
-            ([shutil.which("npx") or "npx", "tsc", "--noEmit"], self.root / "frontend"),
-            ([shutil.which("npm") or "npm", "run", "build"], self.root / "frontend"),
-        ]
-        results = []
-        for command, cwd in commands:
-            started = time.monotonic()
-            try:
-                completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True,
-                                           timeout=180, check=False)
-                output = (completed.stdout + "\n" + completed.stderr)[-2000:]
-                state = "PASSED" if completed.returncode == 0 else "FAILED"
-                exit_code = completed.returncode
-            except (OSError, subprocess.TimeoutExpired) as error:
-                output, state, exit_code = str(error), "FAILED", None
-            results.append({"state": state, "command": " ".join(command), "exit_code": exit_code,
-                            "duration_seconds": round(time.monotonic() - started, 2),
-                            "output_summary": output})
-            if state == "FAILED":
-                break
-        return results
+    def _trusted_checks(self, patch: PatchSet) -> list[dict]:
+        """Run only commands explicitly trusted for this root and profile."""
+        validators = ValidatorService(self.root)
+        chosen = validators.recommended([file.path for file in patch.files],
+                                        (patch.impact or {}).get("affected_tests"))
+        profile = validators.profile()["profile"]
+        approved = {command["id"] for command in profile["commands"] if command["trusted"]}
+        ids = [command_id for command_id in chosen["recommended_command_ids"] if command_id in approved]
+        if not ids:
+            raise ValueError("No recommended validator commands are trusted for this repository.")
+        return validators.run(ids, revision=patch.repo_revision, patch_id=patch.id,
+                              paths=[file.path for file in patch.files],
+                              affected_tests=(patch.impact or {}).get("affected_tests"))["results"]
+
+    def _validation_graph(self, checks: list[dict]) -> list[dict]:
+        profile = ValidatorService(self.root).profile()["profile"]
+        kinds = {item["id"]: item["kind"] for item in profile["commands"]}
+        syntax = [item for item in checks if item.get("command", "").startswith(("Python AST", "Python structural"))]
+        stages = [{"name": "Patch", "state": "PASSED"},
+                  {"name": "Syntax", "state": "FAILED" if any(item["state"] == "FAILED" for item in syntax) else
+                   "PASSED" if syntax else "NOT_RUN"}]
+        for name, matching in (("Typecheck", {"typecheck"}), ("Targeted Tests", {"unit"}),
+                               ("Full Tests", {"test", "integration"}), ("Build", {"build"})):
+            commands = [item for item in profile["commands"] if item["kind"] in matching]
+            result = next((item for item in checks if kinds.get(item.get("command_id")) in matching), None)
+            stages.append({"name": name, "state": result["state"] if result else
+                           "NOT_RUN" if any(item["trusted"] for item in commands) else "NOT_TRUSTED"})
+        return stages
 
     def _history(self) -> list[dict]:
         safe_store(self.root)
@@ -125,10 +115,13 @@ class PatchService:
         entries = [item for item in self._history() if item.get("id") != patch.id]
         entries.insert(0, {"id": patch.id, "source": patch.source, "source_id": patch.source_id,
                            "created_at": patch.created_at, "status": patch.status,
-                           "risk_level": patch.risk_level, "files": [file.path for file in patch.files],
+                           "risk_level": patch.risk_level, "files": [path for file in patch.files for path in
+                            ([file.path, file.destination_path] if file.operation == "move" else [file.path])],
                            "validation": patch.validation, "rollback_available": patch.rollback_available,
                            "applied_hashes": patch.applied_hashes,
-                           "rolled_back_files": patch.rolled_back_files})
+                           "rolled_back_files": patch.rolled_back_files,
+                           "operations": [{"operation": file.operation, "source_path": file.source_path,
+                                           "destination_path": file.destination_path} for file in patch.files]})
         temp = self._history_path.with_suffix(".tmp")
         temp.write_text(json.dumps(entries[:200], indent=2), encoding="utf-8")
         os.replace(temp, self._history_path)
@@ -142,7 +135,9 @@ class PatchService:
         for index, file in enumerate(patch.files):
             before = file.original_bytes.decode("utf-8")
             after = file.proposed_bytes.decode("utf-8")
-            result["files"][index]["unified_diff"] = unified(file.path, before, after)
+            result["files"][index]["unified_diff"] = (f"rename from {file.source_path}\nrename to {file.destination_path}\n" +
+                (unified(file.destination_path or file.path, before, after) if before != after else "")
+                if file.operation == "move" else unified(file.path, before, after))
             result["files"][index]["changed_lines"] = sum(
                 max(hunk.old_count, hunk.new_count) for hunk in file.hunks)
         result["success"] = True
@@ -171,16 +166,50 @@ class PatchService:
                 file = selected_range(self.root, path, start_line, end_line, transformation, replacement)
                 source_id = f"{path}:{start_line}-{end_line}:{transformation}"
             elif source == "planner":
+                if (plan or {}).get("plan_type") in {"move_file", "move_module"} and step_id in {"move", "compatibility"}:
+                    path = str((plan or {}).get("target", ""))
+                    destination = str((plan or {}).get("destination", ""))
+                    files = (move_python_file(self.root, path, destination) if step_id == "move" else
+                             compatibility_reexport(self.root, path, destination))
+                    return self._register(source, f"{(plan or {}).get('id', '')}:{step_id}",
+                                          files, repo_revision, impact)
                 file = planner_file(self.root, plan or {}, step_id)
                 source_id = f"{(plan or {}).get('id', '')}:{step_id}"
             elif source == "ai":
                 if proposed_content is None:
                     raise ValueError("AI patch generation requires an explicit structured proposal.")
                 file = build_file(self.root, path, proposed_content, "Explicit AI rewrite preview", "HIGH", True)
+                file.confidence = "LOW"
+                file.patch_support = "Preview Only"
                 source_id = f"ai:{path}"
             else:
                 raise ValueError("Unsupported patch source.")
             return self._register(source, source_id, [file], repo_revision, impact)
+
+    def generate_verified(self, transformation: str, path: str, options: dict | None = None,
+                          *, repo_revision: str = "", impact: dict | None = None) -> dict:
+        options = options or {}
+        with self._lock:
+            if transformation == "import_consolidation":
+                files = [import_consolidation(self.root, path)]
+            elif transformation == "compatibility_wrapper":
+                files = [compatibility_wrapper(self.root, path, str(options.get("old", "")), str(options.get("new", "")))]
+            elif transformation == "helper_extraction":
+                files = [extract_pure_assignment(self.root, path, str(options.get("function", "")),
+                                                 int(options.get("line", 0)), str(options.get("helper", "")))]
+            elif transformation == "create_file":
+                files = [create_file(self.root, path, str(options.get("content", "")), "Explicit new-file preview")]
+            elif transformation == "delete_file":
+                files = [delete_file(self.root, path, "Explicit deletion preview")]
+            elif transformation == "module_move":
+                moves = options.get("moves")
+                if not isinstance(moves, list) or not moves or not isinstance(moves[0], dict) or moves[0].get("source") != path:
+                    raise ValueError("The first module move must match the selected target path.")
+                files = move_python_module_group(self.root, moves)
+            else:
+                raise ValueError("Unsupported verified transformation.")
+            option_hash = digest(json.dumps(options, sort_keys=True, default=str).encode())[:16]
+            return self._register("verified", f"{transformation}:{path}:{option_hash}", files, repo_revision, impact)
 
     def generate_group(self, changes: list[dict], *, repo_revision: str = "",
                        impact: dict | None = None) -> dict:
@@ -235,7 +264,8 @@ class PatchService:
                 file.warnings.append("AI output requires manual review and explicit apply approval.")
         impact_hash = digest(json.dumps(impact or {}, sort_keys=True, default=str).encode())
         cache_key = ":".join([source, source_id, repo_revision, impact_hash] +
-                             [file.path + file.original_hash + file.proposed_hash for file in files])
+                             [file.path + file.original_hash + file.proposed_hash + file.operation +
+                              (file.destination_path or "") for file in files])
         existing = self._cache.get(cache_key)
         if existing and existing in self._patches and self._patches[existing].status == "ready":
             return {**self._public(self._patches[existing]), "cached": True}
@@ -245,9 +275,15 @@ class PatchService:
             risk_level = "HIGH"
             for file in files:
                 file.warnings.append("Change Impact rates this target as high risk.")
+        confidence = "LOW" if any(file.confidence == "LOW" for file in files) else (
+            "MEDIUM" if any(file.confidence == "MEDIUM" for file in files) or
+            len(files) > 10 else "HIGH")
+        if confidence != "HIGH":
+            for file in files:
+                file.patch_support = "Preview Only"
         patch = PatchSet(patch_id, source, source_id, repo_revision or self.git_info().get("head") or "local",
                          f"{source.title()} patch for {', '.join(f.path for f in files)}", files, risk_level=risk_level,
-                         status="ready", impact=impact or {}, git=self.git_info())
+                         status="ready", impact=impact or {}, git=self.git_info(), confidence=confidence)
         self._patches[patch_id] = patch
         self._cache[cache_key] = patch_id
         self._record(patch)
@@ -265,7 +301,7 @@ class PatchService:
                     self._record(patch)
                     raise ValueError("Planner revision changed since patch generation. Regenerate patch.")
             try:
-                replacements, checks = validate_selection(self.root, patch, selected_hunks)
+                replacements, checks, operations = validate_selection(self.root, patch, selected_hunks)
             except ValueError:
                 self._record(patch)
                 raise
@@ -276,6 +312,10 @@ class PatchService:
             partial = any(item["state"] == "NOT_RUN" for item in checks)
             patch.validation = {"state": "FAILED" if failed else "PARTIAL" if partial else "PASSED",
                                 "checks": checks, "affected_tests": (patch.impact or {}).get("affected_tests", []),
+                                "graph": ([{"name": "Patch", "state": "PASSED"},
+                                           {"name": "Syntax", "state": "FAILED" if failed else "NOT_RUN" if partial else "PASSED"}] +
+                                          [{"name": name, "state": "NOT_TRUSTED"} for name in
+                                           ("Typecheck", "Targeted Tests", "Full Tests", "Build")]),
                                 "selected_hunks": selected_hunks,
                                 "checklist": {"hashes_current": True, "paths_safe": True,
                                               "sensitive_targets_blocked": True, "dependencies_satisfied": True,
@@ -285,8 +325,13 @@ class PatchService:
             self._record(patch)
             return {"success": not failed, "patch_id": patch_id, "status": patch.status,
                     "validation": patch.validation, "selected_diff": {
-                        path: unified(path, next(f.original_bytes.decode("utf-8") for f in patch.files if f.path == path),
-                                      raw.decode("utf-8")) for path, raw in replacements.items()}}
+                        path: (f"rename from {path}\nrename to {operations[path]['destination_path']}\n" +
+                            (unified(operations[path]["destination_path"],
+                                     next(f.original_bytes.decode("utf-8") for f in patch.files if f.path == path),
+                                     raw.decode("utf-8")) if raw != next(f.original_bytes for f in patch.files if f.path == path) else "")
+                            if operations[path]["operation"] == "move" else
+                            unified(path, next(f.original_bytes.decode("utf-8") for f in patch.files if f.path == path),
+                                    raw.decode("utf-8"))) for path, raw in replacements.items()}}
 
     def apply(self, patch_id: str, selected_hunks: list[str], *, confirm_apply: bool = False,
               confirm_high_risk: bool = False, confirm_public_api: bool = False,
@@ -295,10 +340,13 @@ class PatchService:
             raise ValueError("Explicit apply confirmation is required.")
         with self._lock:
             if trusted_validation:
-                git = self.git_info()
-                if not git.get("available") or not re.search(r"github\.com[:/]AKshay1376/Repo-Explainer(?:\.git)?$",
-                                                              git.get("origin") or "", re.IGNORECASE) or self.root.name.lower() != "repo-explainer":
-                    raise ValueError("Trusted project commands are permitted only for the Repo Explainer checkout.")
+                validator_service = ValidatorService(self.root)
+                trusted_ids = {item["id"] for item in validator_service.profile()["profile"]["commands"] if item["trusted"]}
+                preview = self._patches.get(patch_id)
+                recommended = validator_service.recommended([file.path for file in preview.files],
+                    (preview.impact or {}).get("affected_tests")) if preview else {"recommended_command_ids": []}
+                if not set(recommended["recommended_command_ids"]) & trusted_ids:
+                    raise ValueError("Trust a repository-specific validator profile before enabling automatic checks.")
             patch = self._patches.get(patch_id)
             if patch is None:
                 raise ValueError("Patch preview is unavailable; regenerate it.")
@@ -306,9 +354,11 @@ class PatchService:
                 raise ValueError("High-risk changes require a second acknowledgement.")
             if any(file.public_api_change for file in patch.files) and confirm_public_api is not True:
                 raise ValueError("Public API changes require explicit acknowledgement.")
+            if patch.confidence != "HIGH" and patch.source in {"planner", "verified"}:
+                raise ValueError("This patch is preview-only because its confidence is below HIGH.")
             if selected_hunks != patch.selected_hunks or patch.validation["state"] not in {"PASSED", "PARTIAL"}:
                 raise ValueError("Validate this exact hunk selection before apply.")
-            replacements, checks = validate_selection(self.root, patch, selected_hunks)
+            replacements, checks, operations = validate_selection(self.root, patch, selected_hunks)
             if any(item["state"] == "FAILED" for item in checks):
                 raise ValueError("Pre-apply syntax validation failed.")
             patch.status = "approved"
@@ -321,12 +371,14 @@ class PatchService:
                 patch.status = "applying"
                 self._record(patch)
             try:
-                result = apply_files(self.root, patch.id, replacements, on_snapshot=snapshot_recorded)
+                result = apply_files(self.root, patch.id, replacements, on_snapshot=snapshot_recorded,
+                                     operations=operations)
             except Exception as error:
                 patch.status = "rejected"
                 if isinstance(error, ApplyFailure) and error.rollback_failed:
                     patch.rollback_available = True
-                    patch.applied_hashes = {path: digest(replacements[path]) for path in error.rollback_failed}
+                    patch.applied_hashes = {path: digest(replacements[path]) if path in replacements else ""
+                                            for path in error.rollback_failed}
                     patch.warnings.append("Automatic rollback was incomplete; use the saved byte snapshot to restore the listed files.")
                 else:
                     patch.rollback_available = False
@@ -338,21 +390,26 @@ class PatchService:
             patch.rollback_available = True
             post_checks = []
             for path, expected in result["after_hashes"].items():
-                actual = (self.root / path).read_bytes()
-                if digest(actual) != expected:
+                actual = (self.root / path).read_bytes() if (self.root / path).exists() else None
+                if (digest(actual) if actual is not None else "") != expected:
                     post_checks.append({"state": "FAILED", "command": "SHA-256 post-apply verification",
                                         "exit_code": 1, "output_summary": f"{path}: content differs from approved patch"})
-                else:
+                elif actual is not None:
                     post_checks.append(syntax_check(path, actual.decode("utf-8")))
             failed = any(item["state"] == "FAILED" for item in post_checks)
             partial = any(item["state"] == "NOT_RUN" for item in post_checks)
             if trusted_validation and not failed:
-                post_checks.extend(self._trusted_checks())
-                failed = any(item["state"] == "FAILED" for item in post_checks)
+                try:
+                    post_checks.extend(self._trusted_checks(patch))
+                except ValueError as error:
+                    post_checks.append({"state": "NOT_RUN", "command": "Trusted repository validators",
+                                        "exit_code": None, "output_summary": str(error)[:300]})
+                failed = any(item["state"] in {"FAILED", "TIMEOUT"} for item in post_checks)
                 partial = any(item["state"] == "NOT_RUN" for item in post_checks if item["command"] != "No trusted parser configured")
             patch.validation = {"state": "FAILED" if failed else "PARTIAL" if partial else "PASSED",
                                 "checks": post_checks, "affected_tests": (patch.impact or {}).get("affected_tests", []),
-                                "note": "Fixed Repo Explainer checks ran by explicit request." if trusted_validation else
+                                "graph": self._validation_graph(post_checks),
+                                "note": "Trusted repository checks ran by explicit request." if trusted_validation else
                                         "Deterministic syntax checks ran. Project commands require explicit trust."}
             patch.status = "validation_failed" if failed else "applied"
             patch.git = self.git_info()
@@ -373,6 +430,11 @@ class PatchService:
                 raise ValueError("Some selected files were already rolled back.")
             if not paths:
                 paths = [path for path in history.get("applied_hashes", {}) if path not in already]
+            for operation in history.get("operations", []):
+                if operation.get("operation") == "move":
+                    pair = {operation.get("source_path"), operation.get("destination_path")}
+                    if set(paths) & pair and not pair <= set(paths):
+                        raise ValueError("Move rollback must restore source and destination together.")
             if not paths:
                 raise ValueError("All files in this patch were already rolled back.")
             result = restore(self.root, patch_id, paths, confirm_conflicts,
@@ -405,7 +467,8 @@ class PatchService:
             if history is None or history.get("status") != "applied":
                 raise ValueError("Only a successfully applied patch can be accepted.")
             for path, expected in (history.get("applied_hashes") or {}).items():
-                if digest(safe_target(self.root, path).read_bytes()) != expected:
+                actual = (self.root / path).read_bytes() if (self.root / path).exists() else None
+                if (digest(actual) if actual is not None else "") != expected:
                     raise ValueError("Applied files changed; inspect the difference before accepting.")
             if patch:
                 patch.status = "accepted"

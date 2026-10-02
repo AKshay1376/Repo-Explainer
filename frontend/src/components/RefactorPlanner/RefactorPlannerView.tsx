@@ -91,7 +91,8 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Ordered plan steps</h3>
         {plan.steps.map((step) => <PlanStepCard key={step.id} step={step} onOpenSource={onOpenSource} onOpenImpact={onOpenImpact} onOpenGraph={onOpenGraph}
-          onGeneratePatch={onCreatePatch && step.can_auto_preview && plan.plan_type === "rename_symbol" && step.id === "definition"
+          onGeneratePatch={onCreatePatch && ((plan.plan_type === "rename_symbol" && step.id === "definition" && step.can_auto_preview) ||
+            (["move_file", "move_module"].includes(plan.plan_type) && ["move", "compatibility"].includes(step.id)))
             ? (stepId) => onCreatePatch({ source: "planner", path: plan.target.split("::")[0], planTrigger: plannedTrigger || current(), stepId }) : undefined} />)}
       </div>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">

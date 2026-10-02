@@ -37,6 +37,7 @@ from rate_limit import (
     get_humanize_ai_limit,
     get_refactor_limit,
     get_refactor_ai_limit,
+    get_validator_run_limit,
 )
 from repo_qa import default_ask_service
 from execution_trace import default_trace_service
@@ -46,6 +47,7 @@ from humanize.service import HumanizeService
 from refactor_planner.service import RefactorPlannerService
 from patch_engine import PatchService
 from patch_engine.validator import readable_text, safe_target
+from validators import ValidatorService
 from humanize.service import _api_surface
 from source_service import detect_language
 from urllib.parse import urlparse
@@ -55,6 +57,7 @@ default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
 default_refactor_service = RefactorPlannerService(default_impact_service, default_trace_service)
 _local_patch_service = None
+_local_validator_service = None
 app = Flask(__name__, static_folder=None)
 init_limiter(app)
 
@@ -88,6 +91,60 @@ def _patch_context(data=None):
         elif os.getenv("PATCH_REPOSITORY", "").lower() != f"{owner}/{repo}".lower():
             raise ValueError("Unversioned patch roots require a matching PATCH_REPOSITORY setting.")
     return service
+
+
+def _validator_context(data=None):
+    global _local_validator_service
+    patch = _patch_context(data)
+    if _local_validator_service is None or _local_validator_service.root != patch.root:
+        _local_validator_service = ValidatorService(patch.root)
+    return _local_validator_service
+
+
+@app.route("/api/validators/profile", methods=["GET"])
+def api_validator_profile():
+    try:
+        return jsonify(_validator_context(request.args).profile())
+    except (ValueError, OSError) as error:
+        return _patch_error(error)
+
+
+@app.route("/api/validators/detect", methods=["POST"])
+def api_validator_detect():
+    try:
+        return jsonify(_validator_context(request.get_json(silent=True) or {}).detect())
+    except (ValueError, OSError) as error:
+        return _patch_error(error)
+
+
+@app.route("/api/validators/trust", methods=["POST"])
+def api_validator_trust():
+    try:
+        data = request.get_json(silent=True) or {}
+        return jsonify(_validator_context(data).trust(data.get("scope"), data.get("command_ids"),
+                                                     confirm=data.get("confirm_trust") is True))
+    except (ValueError, TypeError, OSError) as error:
+        return _patch_error(error)
+
+
+@app.route("/api/validators/run", methods=["POST"])
+@limiter.limit(get_validator_run_limit)
+def api_validator_run():
+    try:
+        data = request.get_json(silent=True) or {}
+        return jsonify(_validator_context(data).run(data.get("command_ids"),
+            revision=data.get("revision", ""), patch_id=data.get("patch_id", ""),
+            paths=data.get("paths", [])))
+    except (ValueError, TypeError, OSError) as error:
+        return _patch_error(error)
+
+
+@app.route("/api/validators/history", methods=["GET"])
+def api_validator_history():
+    try:
+        return jsonify(_validator_context(request.args).history())
+    except (ValueError, OSError) as error:
+        return _patch_error(error)
 
 
 def _patch_error(error):
@@ -191,6 +248,23 @@ def api_patch_validate():
         return _patch_error(error)
 
 
+@app.route("/api/patch/verified", methods=["POST"])
+@limiter.limit(get_refactor_limit)
+def api_patch_verified():
+    try:
+        data = request.get_json(silent=True) or {}
+        if not data.get("repo_url") or not isinstance(data.get("path"), str):
+            raise ValueError("Repository URL and target path are required.")
+        service = _patch_context(data)
+        owner, repo = validate_github_url(data["repo_url"])
+        model = get_cached_repository_model(owner, repo) or {}
+        return jsonify(service.generate_verified(data.get("transformation"), data["path"],
+            data.get("options") or {}, repo_revision=data.get("ref", ""),
+            impact=_patch_impact(model, data["path"], owner, repo, data.get("ref"))))
+    except (ValueError, TypeError, OSError) as error:
+        return _patch_error(error)
+
+
 @app.route("/api/patch/impact", methods=["POST"])
 @limiter.limit(get_impact_limit)
 def api_patch_impact():
@@ -216,8 +290,6 @@ def api_patch_apply():
         data = request.get_json(silent=True) or {}
         service = _patch_context(data)
         trusted = data.get("run_project_validation") is True
-        if trusted and (os.getenv("PATCH_TRUSTED_VALIDATION") != "1" or service.root != Path(BASE_DIR).resolve()):
-            raise ValueError("Trusted project validation is unavailable for this checkout.")
         result = service.apply(data.get("patch_id", ""), data.get("selected_hunks", []),
             confirm_apply=data.get("confirm_apply") is True,
             confirm_high_risk=data.get("confirm_high_risk") is True,

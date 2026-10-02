@@ -36,6 +36,11 @@ class PatchFile:
     status: str = "ready"
     original_bytes: bytes = field(default=b"", repr=False)
     proposed_bytes: bytes = field(default=b"", repr=False)
+    operation: str = "modify"
+    source_path: str | None = None
+    destination_path: str | None = None
+    confidence: str = "HIGH"
+    patch_support: str = "Verified"
 
     def public(self) -> dict[str, Any]:
         return {key: value for key, value in asdict(self).items()
@@ -61,6 +66,7 @@ class PatchSet:
     selected_hunks: list[str] = field(default_factory=list)
     applied_hashes: dict[str, str] = field(default_factory=dict)
     rolled_back_files: list[str] = field(default_factory=list)
+    confidence: str = "HIGH"
 
     def public(self, *, include_diff: bool = True) -> dict[str, Any]:
         result = {key: value for key, value in asdict(self).items() if key != "files"}

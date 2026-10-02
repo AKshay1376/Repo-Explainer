@@ -28,6 +28,11 @@ export interface PatchHunk {
 
 export interface PatchFile {
   path: string
+  operation?: "modify" | "create" | "delete" | "move"
+  source_path?: string | null
+  destination_path?: string | null
+  confidence?: "HIGH" | "MEDIUM" | "LOW"
+  patch_support?: "Verified" | "Preview Only" | "Manual"
   original_hash: string
   proposed_hash: string
   risk_level: string
@@ -46,10 +51,11 @@ export interface PatchSet {
   status: string
   summary: string
   risk_level: string
+  confidence?: "HIGH" | "MEDIUM" | "LOW"
   files: PatchFile[]
   created_at: string
   warnings: string[]
-  validation: { state: "PASSED" | "PARTIAL" | "FAILED" | "NOT_RUN"; checks: Array<{ state: string; command: string; output_summary: string; exit_code: number | null }>; checklist?: Record<string, boolean>; note?: string }
+  validation: { state: "PASSED" | "PARTIAL" | "FAILED" | "NOT_RUN"; checks: Array<{ state: string; command: string; output_summary: string; exit_code: number | null }>; checklist?: Record<string, boolean>; note?: string; graph?: Array<{ name: string; state: string }> }
   rollback_available: boolean
   impact: Record<string, unknown>
   git: { available?: boolean; branch?: string; dirty?: boolean; head?: string; commit_status?: string; diff_stat?: string; origin?: string }
