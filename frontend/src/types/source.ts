@@ -1,5 +1,6 @@
 export interface SourceLocation {
   path: string
+  revision?: string
   startLine?: number
   endLine?: number
   requestId?: number

@@ -63,6 +63,7 @@ const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then
 const PatchReviewView = React.lazy(() => import("./PatchReview/PatchReviewView").then((module) => ({ default: module.PatchReviewView })))
 const ValidationView = React.lazy(() => import("./Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
 const ProjectHealthView = React.lazy(() => import("./ProjectHealth/ProjectHealthView").then((module) => ({ default: module.ProjectHealthView })))
+const GitHistoryView = React.lazy(() => import("./GitHistory/GitHistoryView").then((module) => ({ default: module.GitHistoryView })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -89,18 +90,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"health" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
+  const [activeTab, setActiveTab] = useState<"health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
     repository_model ? "health" : "report"
   )
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "health" : "report"]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "health" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
+  const navigateTab = React.useCallback((tab: "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
   const openSource = React.useCallback((location: SourceLocation) => {
     setSourceLocation({ ...location, requestId: Date.now() })
     navigateTab("source")
+  }, [navigateTab])
+  const [historyTarget, setHistoryTarget] = useState<{ path: string; requestId: number } | null>(null)
+  const openHistory = React.useCallback((path: string) => {
+    setHistoryTarget({ path, requestId: Date.now() })
+    navigateTab("history")
   }, [navigateTab])
   const [humanizeTarget, setHumanizeTarget] = useState<{ path: string; requestId: number } | null>(null)
   const openHumanize = React.useCallback((path: string) => {
@@ -445,6 +451,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "health" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
             <ZapIcon className="h-4 w-4 text-brand" /><span>Project Health</span>
           </button>}
+          {repository_model && <button onClick={() => navigateTab("history")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "history" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
+            <GitBranchIcon className="h-4 w-4 text-brand" /><span>History</span>
+          </button>}
           <button
             onClick={() => navigateTab("explorer")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -539,6 +549,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Views stay mounted after first visit so conversations and graph position survive navigation. */}
+      {repository_model && visitedTabs.has("history") && <div hidden={activeTab !== "history"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Git History…</p>}>
+          <GitHistoryView repoUrl={repoUrl} model={repository_model} target={historyTarget}
+            onOpenSource={openSource} onAnalyzeImpact={(path) => handleAnalyzeImpact({ file: path })}
+            onHumanize={openHumanize} onCreatePlan={(path) => openPlan({ planType: "split_large_file", target: path })} />
+        </React.Suspense>
+      </div>}
       {repository_model && visitedTabs.has("health") && <div hidden={activeTab !== "health"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Project Health…</p>}>
           <ProjectHealthView repoUrl={repoUrl} model={repository_model} onOpenSource={openSource}
@@ -587,7 +604,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>}
       {repository_model && visitedTabs.has("source") && <div hidden={activeTab !== "source"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading source viewer…</p>}>
-          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} />
+          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} onViewHistory={openHistory} />
         </React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("humanize") && <div hidden={activeTab !== "humanize"}>

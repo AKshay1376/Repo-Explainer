@@ -6,6 +6,7 @@ import { PLAN_TYPES, type PlanTrigger, type PlanType } from "../../types/refacto
 import { useRefactorPlanner } from "../../hooks/useRefactorPlanner"
 import { PlanStepCard } from "./PlanStepCard"
 import { PlanGraph } from "./PlanGraph"
+import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
 
 interface Props {
   repoUrl: string
@@ -66,6 +67,7 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
         onClick={() => requestPlan(current())} className="rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">Generate plan</button>
       {loading && <p role="status" className="text-xs text-ink-secondary">Building plan…</p>}
       {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+      {plan?.target && <FileHistoryContext repoUrl={repoUrl} path={plan.target} />}
     </div>
     {plan && <>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">

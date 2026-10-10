@@ -45,6 +45,8 @@ from change_impact import ChangeImpactService
 from source_service import get_source_file
 from humanize.service import HumanizeService
 from project_health import ProjectHealthService
+from git_history import GitHistoryService
+from git_history.repository import GitHistoryError
 from refactor_planner.service import RefactorPlannerService
 from patch_engine import PatchService
 from patch_engine.validator import readable_text, safe_target
@@ -57,6 +59,7 @@ from pathlib import Path
 default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
 default_project_health_service = ProjectHealthService(default_humanize_service)
+_local_history_service = None
 default_refactor_service = RefactorPlannerService(default_impact_service, default_trace_service)
 _local_patch_service = None
 _local_validator_service = None
@@ -539,9 +542,161 @@ def api_project_health():
             str(metadata.get("repo", repo)).lower() != repo.lower()
         )):
             raise ValueError("Repository model does not match the requested repository.")
-        return jsonify(default_project_health_service.analyze(owner, repo, model))
+        history_signals = None
+        try:
+            history_service, _, _, _ = _history_context({"repo_url": data.get("repo_url") or data.get("url")})
+            history_signals = history_service.health_signals(owner, repo, model)
+        except (GitHistoryError, ValueError, TypeError):
+            pass  # Project Health still works when local Git history is unavailable.
+        return jsonify(default_project_health_service.analyze(owner, repo, model, history_signals))
     except (ValueError, TypeError) as error:
         return jsonify({"success": False, "error": str(error)}), 400
+
+
+def _history_context(data=None):
+    """Bind history reads to one configured local checkout and GitHub origin."""
+    global _local_history_service
+    if request.remote_addr not in {"127.0.0.1", "::1", "localhost"}:
+        raise GitHistoryError("Local Git history is available only through the local service.")
+    origin_header = request.headers.get("Origin")
+    if origin_header:
+        parsed = urlparse(origin_header)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"localhost", "127.0.0.1"}:
+            raise GitHistoryError("Git history requires a local app origin.")
+    root = os.getenv("HISTORY_LOCAL_ROOT") or os.getenv("PATCH_LOCAL_ROOT")
+    if _local_history_service is None or str(_local_history_service.git.root) != str(Path(root).resolve() if root else None):
+        _local_history_service = GitHistoryService(root, impact_service=default_impact_service,
+                                                   humanize_service=default_humanize_service)
+    service = _local_history_service
+    if data and data.get("repo_url"):
+        owner, repo = validate_github_url(data["repo_url"])
+        state = service.status(owner, repo)
+        if not state["available"]:
+            raise GitHistoryError(state["message"])
+        model = get_cached_repository_model(owner, repo) or data.get("repository_model") or {}
+        metadata = model.get("metadata") or {} if isinstance(model, dict) else {}
+        if not isinstance(model, dict) or not isinstance(metadata, dict) or (metadata and (
+            str(metadata.get("owner", owner)).lower() != owner.lower() or
+            str(metadata.get("repo", repo)).lower() != repo.lower()
+        )):
+            raise GitHistoryError("Repository model does not match the requested repository.")
+        return service, owner, repo, model
+    return service, None, None, {}
+
+
+def _history_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("repo_url"), str):
+        raise GitHistoryError("A repository URL and JSON object are required.")
+    return data
+
+
+def _history_error(error):
+    return jsonify({"success": False, "error": str(error)}), 400
+
+
+@app.route("/api/history/status", methods=["GET"])
+def api_history_status():
+    try:
+        repo_url = request.args.get("repo_url")
+        if not repo_url:
+            raise GitHistoryError("A repository URL is required for local history.")
+        service, _, _, _ = _history_context({"repo_url": repo_url})
+        return jsonify({"success": True, **service.status(), "llm_calls": 0})
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return jsonify({"success": True, "available": False, "message": str(error), "llm_calls": 0})
+
+
+@app.route("/api/history/commits", methods=["POST"])
+def api_history_commits():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.timeline(limit=data.get("limit", 50), offset=data.get("offset", 0),
+            path=data.get("path"), since=data.get("since"), until=data.get("until"),
+            author=data.get("author"), merge=data.get("merge"), branch=data.get("branch")))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/file", methods=["POST"])
+def api_history_file():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.file(data.get("path"), limit=data.get("limit", 50)))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/hotspots", methods=["POST"])
+def api_history_hotspots():
+    try:
+        data = _history_body()
+        service, owner, repo, model = _history_context(data)
+        return jsonify(service.hotspots(owner, repo, model, scan=data.get("scan", 200), limit=data.get("limit", 50)))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/cochange", methods=["POST"])
+def api_history_cochange():
+    try:
+        data = _history_body()
+        service, _, _, model = _history_context(data)
+        return jsonify(service.cochange(model, scan=data.get("scan", 200), limit=data.get("limit", 50)))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/compare", methods=["POST"])
+def api_history_compare():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.compare(data.get("before"), data.get("after"), path=data.get("path")))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/commit", methods=["POST"])
+def api_history_commit():
+    try:
+        data = _history_body()
+        service, _, _, model = _history_context(data)
+        return jsonify(service.commit(data.get("sha"), model))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/source", methods=["POST"])
+def api_history_source():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.source(data.get("sha"), data.get("path")))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/blame", methods=["POST"])
+def api_history_blame():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.blame(data.get("sha"), data.get("path"), data.get("start", 1), data.get("end", 20)))
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
+
+
+@app.route("/api/history/evolution", methods=["POST"])
+def api_history_evolution():
+    try:
+        data = _history_body()
+        service, _, _, _ = _history_context(data)
+        return jsonify(service.evolution())
+    except (GitHistoryError, ValueError, TypeError) as error:
+        return _history_error(error)
 
 
 @app.route("/api/analyze", methods=["POST", "OPTIONS"])

@@ -5,8 +5,8 @@ const responseCache = new Map<string, SourceResponse>()
 
 type LoadState = { key: string; data: SourceResponse | null; error: string | null; loading: boolean }
 
-export function useSourceFile(repoUrl: string, path: string | null, ref: string) {
-  const key = useMemo(() => path ? `${repoUrl}|${ref}|${path}` : "", [repoUrl, ref, path])
+export function useSourceFile(repoUrl: string, path: string | null, ref: string, historical = false) {
+  const key = useMemo(() => path ? `${repoUrl}|${ref}|${path}|${historical}` : "", [repoUrl, ref, path, historical])
   const [state, setState] = useState<LoadState>({ key: "", data: null, error: null, loading: false })
 
   useEffect(() => {
@@ -22,10 +22,10 @@ export function useSourceFile(repoUrl: string, path: string | null, ref: string)
 
     const controller = new AbortController()
     setState({ key, data: null, error: null, loading: true })
-    fetch("/api/source", {
+    fetch(historical ? "/api/history/source" : "/api/source", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo_url: repoUrl, path, ref }),
+      body: JSON.stringify(historical ? { repo_url: repoUrl, path, sha: ref } : { repo_url: repoUrl, path, ref }),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -44,7 +44,7 @@ export function useSourceFile(repoUrl: string, path: string | null, ref: string)
         setState({ key, data: null, error: error instanceof Error ? error.message : "Could not load source.", loading: false })
       })
     return () => controller.abort()
-  }, [repoUrl, path, ref, key])
+  }, [repoUrl, path, ref, historical, key])
 
   const current = state.key === key ? state : { key, data: null, error: null, loading: !!path }
   return { file: current.data?.file ?? null, error: current.error, loading: current.loading }

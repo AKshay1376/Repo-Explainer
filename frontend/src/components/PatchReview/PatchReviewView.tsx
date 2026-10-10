@@ -9,6 +9,7 @@ import { ValidationResults } from "./ValidationResults"
 import { PatchHistory } from "./PatchHistory"
 import { RollbackPanel } from "./RollbackPanel"
 import { canApplyPatch, hunkIds } from "../../lib/patchSelection"
+import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
 
 const ValidationView = React.lazy(() => import("../Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
 
@@ -78,6 +79,7 @@ export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOp
       <div className="rounded-xl border border-line bg-surface-inset p-3 space-y-2 text-xs text-ink-secondary"><strong className="text-ink">Optional AI patch preview</strong><p>Only the bounded, secret-checked local target is sent to the configured provider after this explicit request. Output remains preview-only.</p><input value={aiInstructions} onChange={(event) => setAiInstructions(event.target.value)} maxLength={500} placeholder="Rewrite guidance" aria-label="AI rewrite guidance" className="w-full rounded-lg border border-line bg-surface p-2 text-xs text-ink" /><label className="flex gap-2"><input type="checkbox" checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} /> I explicitly request an AI patch preview.</label><button disabled={!aiConsent || loading || !manualPath.trim()} onClick={() => { setAiConsent(false); void generateAi(manualPath.trim(), aiInstructions) }} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-1.5 font-semibold text-brand disabled:opacity-40">Generate AI preview</button></div>
       {loading && <p role="status" className="text-xs text-ink-secondary">Working…</p>}
       {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+      {patch?.files[0]?.path && <FileHistoryContext repoUrl={repoUrl} path={patch.files[0].path} />}
     </div>
     {patch && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-4">
       <div className="flex flex-wrap items-center gap-2"><h3 className="mr-auto font-semibold text-ink">{patch.summary}</h3><span className="text-xs text-ink-secondary">{patch.status} · {patch.risk_level} risk · {patch.id.slice(0, 12)}</span></div>

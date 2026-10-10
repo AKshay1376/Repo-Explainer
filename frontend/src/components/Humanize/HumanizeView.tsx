@@ -7,6 +7,7 @@ import type { PatchTrigger } from "../../types/patch"
 import { useHumanize } from "../../hooks/useHumanize"
 import { FindingCard } from "./FindingCard"
 import { PatchPreview } from "./PatchPreview"
+import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
 
 interface HumanizeViewProps {
   repoUrl: string
@@ -56,6 +57,7 @@ export const HumanizeView: React.FC<HumanizeViewProps> = ({ repoUrl, model, targ
       <p className="text-xs text-ink-tertiary">Repository audit is analysis only. It surveys every modeled file and uses available cached source for content findings; it never refactors the repository.</p>
       {loading && <p className="text-sm text-ink-secondary" role="status">Analyzing…</p>}
       {error && <p className="text-sm text-rose-600" role="alert">{error}</p>}
+      {fileResult?.path && <FileHistoryContext repoUrl={repoUrl} path={fileResult.path} />}
     </div>
 
     {fileResult && <div className="space-y-5">

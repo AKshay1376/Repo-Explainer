@@ -286,6 +286,14 @@ Read-only Project Health analysis for an already analyzed repository. Send `{"re
 
 Each dimension starts at 100. A HIGH, MEDIUM, or LOW finding subtracts 12, 6, or 2 points, multiplied by confidence HIGH 1.0, MEDIUM 0.6, or LOW 0.3. Deductions are capped at 60 per dimension. Overall Health is the rounded mean of the four rounded dimension scores. Labels are Excellent (90+), Strong (80+), Good (70+), Needs Attention (60+), Weak (40+), and Critical (below 40). The dashboard shows coverage because missing cached source limits security, performance, and code-quality detection; a high score is not proof that a project is safe or fast.
 
+### Local Git History Intelligence
+
+Set `HISTORY_LOCAL_ROOT` to the exact local Git checkout root, or reuse `PATCH_LOCAL_ROOT`. The checkout's `origin` must match the analyzed GitHub repository. History is unavailable when the configured checkout is missing or mismatched; other analysis features continue working. All history calls use bounded, read-only Git subprocess arguments, never checkout, execute repository source, or call an LLM. Author names are shown as commit attribution; email addresses are hashed and never returned.
+
+History routes are `GET /api/history/status?repo_url=owner/repo` and `POST /api/history/commits`, `/api/history/file`, `/api/history/hotspots`, `/api/history/cochange`, `/api/history/compare`, `/api/history/commit`, `/api/history/source`, `/api/history/blame`, and `/api/history/evolution`. POST bodies include `repo_url`. Timeline pages default to 50 commits and cap at 200; hotspot/co-change scans cap at 200; file history traces at most 200 commits. Historical source is limited to 200 KB, sensitive files and diff content are blocked or redacted, and all revisions must resolve from hexadecimal commit IDs. The Source Viewer labels historical content read-only and disables change actions there.
+
+Maintenance hotspot scores combine normalized churn (35), change frequency (25), current dependency centrality (20), and the cached Humanize maintainability score (20). Labels are Stable (0–24), Active (25–49), Hotspot (50–74), and Critical Hotspot (75–100). These are sampled maintenance indicators, not claims that code is defective. Architecture evolution compares Git trees at HEAD and available 7/30/90-day checkpoints; it does not infer route or dependency counts from file names.
+
 ### `POST /api/download`
 Streams the generated Markdown report as a downloadable `.md` file attachment.
 

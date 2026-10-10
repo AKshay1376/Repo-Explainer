@@ -92,7 +92,7 @@ class ProjectHealthService:
         self.humanize = humanize or HumanizeService()
         self._cache = {}
 
-    def analyze(self, owner, repo, model):
+    def analyze(self, owner, repo, model, history_signals=None):
         if not isinstance(model, dict) or not isinstance(model.get("files"), dict) or not model["files"]:
             raise ValueError("Analyze a repository before requesting Project Health.")
         metadata = model.get("metadata") or {}
@@ -121,7 +121,8 @@ class ProjectHealthService:
                     if safe == raw and path.endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
                         language = "python" if path.endswith(".py") else "typescript" if path.endswith((".ts", ".tsx")) else "javascript"
                         safe_previews[path] = deterministic_candidates(raw, language)
-        snapshot = hashlib.sha256(json.dumps({"model": model, "contents": fingerprints}, sort_keys=True, default=str).encode()).hexdigest()
+        snapshot = hashlib.sha256(json.dumps({"model": model, "contents": fingerprints,
+                                               "history": history_signals or {}}, sort_keys=True, default=str).encode()).hexdigest()
         key = (owner.lower(), repo.lower(), revision, snapshot)
         if key in self._cache:
             return {**self._cache[key], "cached": True}
@@ -227,6 +228,27 @@ class ProjectHealthService:
                     {"type": "deterministic_preview", "suggestion_id": preview["id"]}, path,
                     actions=["View Source", "Humanize", "Generate Patch"])
                 finding["patch_suggestion_id"] = preview["id"]
+        if history_signals:
+            for item in history_signals.get("unstable_central_files", [])[:5]:
+                path = item.get("path")
+                if path not in files or is_sensitive_file(path):
+                    continue
+                historical = add("Architecture", "historical_central_activity", "LOW", "MEDIUM", "Frequently modified central file",
+                    f"This central file scored {item['score']}/100 in the sampled maintenance hotspot analysis.",
+                    "Review current dependents before changing a frequently modified central file; activity does not prove a defect.",
+                    {"type": "git_hotspot", "head": history_signals.get("head"),
+                     "sampled_commits": history_signals.get("sampled_commits"),
+                     "commits_touching_file": item.get("commits"), "centrality_points": item.get("factors", {}).get("centrality")},
+                    path, actions=["View Source", "Analyze Impact", "View References"])
+                historical["source"] = "Git History + RepositoryModel"
+                if item.get("factors", {}).get("maintainability", 0) >= 8:
+                    quality = add("Code Quality", "maintainability_with_churn", "LOW", "MEDIUM", "Maintainability with repeated change",
+                        "Cached Humanize maintainability and sampled Git churn both contribute to this hotspot.",
+                        "Consider this history when prioritizing maintainability work; severity is not raised solely by churn.",
+                        {"type": "git_humanize_combination", "head": history_signals.get("head"),
+                         "maintainability_points": item["factors"]["maintainability"], "commits_touching_file": item.get("commits")},
+                        path, actions=["View Source", "Humanize", "Analyze Impact"])
+                    quality["source"] = "Git History + Humanize"
 
         for finding in findings:
             path = finding["file"]
