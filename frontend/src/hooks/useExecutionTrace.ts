@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 /**
  * hooks/useExecutionTrace.ts
  * Manages execution path tracing state, API calls to /api/trace,
@@ -75,7 +76,7 @@ export function useExecutionTrace({ repoUrl, repositoryModel }: UseExecutionTrac
       setSelectedEdge(null)
 
       try {
-        const response = await fetch("/api/trace", {
+        const response = await apiFetch("/api/trace", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

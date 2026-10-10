@@ -1,8 +1,9 @@
+import { apiFetch } from "../apiClient"
 import { useCallback, useEffect, useState } from "react"
 import type { SavedProject } from "../types/persistence"
 
 export async function localApi<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+  const response = await apiFetch(`/api${path}`, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body) })
   const value = await response.json()
   if (!response.ok || !value.success) throw new Error(value.error || "Local project request failed.")

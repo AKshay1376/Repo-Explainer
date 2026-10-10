@@ -1,6 +1,6 @@
 """Incremental, idempotent schema migration; user data is never dropped."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _statements(connection, sql):
@@ -76,6 +76,16 @@ def migrate(connection):
                 CREATE INDEX IF NOT EXISTS ix_recent_project ON recent_items(project_id, created_at DESC);
             """)
             version = 2
+        if version < 3:
+            _statements(connection, """
+                CREATE TABLE IF NOT EXISTS jobs (
+                  id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL,
+                  progress INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '',
+                  repo_url TEXT NOT NULL, result_project_id TEXT,
+                  created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+                CREATE INDEX IF NOT EXISTS ix_jobs_created ON jobs(created_at DESC);
+            """)
+            version = 3
         connection.execute("DELETE FROM schema_version")
         connection.execute("INSERT INTO schema_version(version) VALUES (?)", (version,))
         connection.commit()

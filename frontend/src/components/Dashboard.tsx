@@ -36,6 +36,7 @@ import type { PatchTrigger } from "../types/patch"
 import type { DocumentTarget } from "../types/documentation"
 import { localApi } from "../hooks/useProjects"
 import { useSessionState } from "../hooks/useSessionState"
+import { tabAvailable } from "../lib/deployment"
 
 import { sourceForStep, sourceForImpact } from "../lib/sourceNavigation"
 
@@ -61,6 +62,7 @@ interface DashboardProps {
   projectId?: string | null
   initialTab?: string | null
   initialFileOverride?: string | null
+  capabilities?: Record<string, boolean>
 }
 
 type DashboardTab = "project" | "docs" | "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation"
@@ -82,7 +84,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   projectId,
   initialTab,
   initialFileOverride,
+  capabilities,
 }) => {
+  const localFeatures = capabilities?.local_filesystem !== false
+  const patchAvailable = capabilities?.patch_apply !== false
+  const validatorAvailable = capabilities?.validator_execution !== false
   const [copied, setCopied] = useState(false)
   const [isStructureOpen, setIsStructureOpen] = useState(false)
 
@@ -110,9 +116,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([initialTab || (projectId ? "project" : repository_model ? "health" : "report")]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
   const navigateTab = React.useCallback((tab: DashboardTab) => {
+    if (!tabAvailable(tab, capabilities)) return
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
-  }, [])
+  }, [capabilities])
   const openSource = React.useCallback((location: SourceLocation) => {
     setSourceLocation({ ...location, requestId: Date.now() })
     if (projectId) void localApi(`/projects/${projectId}/recent`, "POST", { type: "file", target: location.path, view: "source" }).catch(() => undefined)
@@ -474,6 +481,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* 3. Section Switcher Tabs */}
       {staleSession && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Repository changed since last session. Analyze latest or continue with the current snapshot. Patch and refactor contexts were not restored.</p>}
+      {!localFeatures && <p className="rounded-xl border border-line bg-surface p-3 text-sm text-ink-secondary">Local filesystem, patch apply, validator execution, and Git history are available only in a local or trusted deployment.</p>}
       <div className="flex items-center justify-between border-b border-line pb-4">
         <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-surface-subtle/80 border border-line">
           {projectId && <button onClick={() => navigateTab("project")} className={`rounded-xl px-4 py-2 text-xs font-semibold ${activeTab === "project" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>Project</button>}
@@ -481,7 +489,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "health" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
             <ZapIcon className="h-4 w-4 text-brand" /><span>Project Health</span>
           </button>}
-          {repository_model && <button onClick={() => navigateTab("history")}
+          {repository_model && localFeatures && <button onClick={() => navigateTab("history")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "history" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
             <GitBranchIcon className="h-4 w-4 text-brand" /><span>History</span>
           </button>}
@@ -565,8 +573,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button onClick={() => navigateTab("refactor")} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-ink-secondary hover:text-ink"><WorkflowIcon className="h-4 w-4 text-brand" /><span>Refactor Planner</span></button>
-          <button onClick={() => navigateTab("patch")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "patch" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CodeIcon className="h-4 w-4 text-brand" /><span>Patch Review</span></button>
-          <button onClick={() => navigateTab("validation")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "validation" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CheckIcon className="h-4 w-4 text-brand" /><span>Validation</span></button>
+          {patchAvailable && <button onClick={() => navigateTab("patch")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "patch" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CodeIcon className="h-4 w-4 text-brand" /><span>Patch Review</span></button>}
+          {validatorAvailable && <button onClick={() => navigateTab("validation")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "validation" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CheckIcon className="h-4 w-4 text-brand" /><span>Validation</span></button>}
 
           <button
             onClick={() => navigateTab("report")}

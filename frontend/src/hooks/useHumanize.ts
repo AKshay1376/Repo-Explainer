@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 import { useCallback, useRef, useState } from "react"
 import type { RepositoryModel } from "../types/repository"
 import type { HumanizeAiResult, HumanizeAuditResult, HumanizeFileResult, HumanizeMode } from "../types/humanize"
@@ -14,7 +15,7 @@ export function useHumanize({ repoUrl, model }: Options) {
   const ref = model.metadata.latest_commit_sha || model.metadata.default_branch
 
   const post = useCallback(async <T,>(endpoint: string, body: Record<string, unknown>): Promise<T> => {
-    const response = await fetch(endpoint, {
+    const response = await apiFetch(endpoint, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, ref, repository_model: model, ...body }),
     })

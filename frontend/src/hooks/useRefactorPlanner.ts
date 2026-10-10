@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 import { useCallback, useRef, useState } from "react"
 import type { RepositoryModel } from "../types/repository"
 import type { ExplainResponse, PlanResponse, PlanTrigger, ValidateResponse } from "../types/refactor"
@@ -11,7 +12,7 @@ export function useRefactorPlanner(repoUrl: string, model: RepositoryModel) {
   const requestId = useRef(0)
   const ref = model.metadata.latest_commit_sha || model.metadata.default_branch
   const post = useCallback(async <T,>(endpoint: string, trigger: PlanTrigger, extra: Record<string, unknown> = {}): Promise<T> => {
-    const response = await fetch(endpoint, {
+    const response = await apiFetch(endpoint, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, repository_model: model, ref,
         plan_type: trigger.planType, target: trigger.target, destination: trigger.destination,

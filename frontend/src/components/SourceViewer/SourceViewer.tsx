@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiClient"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
@@ -55,7 +56,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
     if (!visible || !path) return
     let active = true
     if (historical) { setLastValidation(null); return }
-    void fetch(`/api/validators/history?repo_url=${encodeURIComponent(repoUrl)}`)
+    void apiFetch(`/api/validators/history?repo_url=${encodeURIComponent(repoUrl)}`)
       .then((response) => response.json())
       .then((result) => { if (active) setLastValidation((result.history || []).find((item: ValidatorResult) => item.paths?.includes(path)) || null) })
       .catch(() => { if (active) setLastValidation(null) })
@@ -98,7 +99,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
     const start = location?.startLine || 1
     const end = Math.min(location?.endLine || start + 19, start + 199)
     try {
-      const response = await fetch("/api/history/blame", { method: "POST", headers: { "Content-Type": "application/json" },
+      const response = await apiFetch("/api/history/blame", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo_url: repoUrl, sha: ref, path, start, end }) })
       const payload = await response.json()
       if (!response.ok || !payload.success) throw new Error(payload.error || "Line history unavailable.")

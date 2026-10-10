@@ -10,14 +10,15 @@ Provides caching for:
 Failures, error states, and unauthenticated responses are never cached.
 """
 
-import os
 import threading
 from typing import Any, Dict, List, Optional
 from cachetools import TTLCache
+from config import load_settings
 
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "1").strip().lower() in ("1", "true", "yes")
-DEFAULT_CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
-DEFAULT_CACHE_MAXSIZE = int(os.getenv("CACHE_MAXSIZE", "100"))
+_settings = load_settings()
+CACHE_ENABLED = _settings.cache_enabled
+DEFAULT_CACHE_TTL = _settings.cache_ttl
+DEFAULT_CACHE_MAXSIZE = _settings.cache_maxsize
 
 _lock = threading.Lock()
 
@@ -229,4 +230,3 @@ def get_cache_stats() -> Dict[str, Any]:
             "humanize_count": len(_humanize_cache),
             "refactor_count": len(_refactor_cache),
         }
-

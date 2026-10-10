@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiClient"
 import React, { useEffect, useState } from "react"
 import type { FileHistory } from "../../types/gitHistory"
 
@@ -6,7 +7,7 @@ export const FileHistoryContext: React.FC<{ repoUrl: string; path: string; onVie
   useEffect(() => {
     if (!path) { setHistory(null); return }
     const controller = new AbortController()
-    fetch("/api/history/file", { method: "POST", headers: { "Content-Type": "application/json" },
+    apiFetch("/api/history/file", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, path, limit: 5 }), signal: controller.signal })
       .then(async response => { const value = await response.json(); return response.ok && value.success ? value as FileHistory : null })
       .then(value => { if (!controller.signal.aborted) setHistory(value) })

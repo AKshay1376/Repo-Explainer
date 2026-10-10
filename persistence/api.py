@@ -3,7 +3,7 @@
 import sqlite3
 from urllib.parse import urlparse
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from .service import PersistenceService
 
@@ -13,12 +13,15 @@ def create_blueprint(service: PersistenceService):
 
     @api.before_request
     def local_only():
-        if request.remote_addr not in {"127.0.0.1", "::1", "localhost"}:
+        configured = current_app.config.get("DEPLOYMENT_SETTINGS")
+        production = bool(configured and configured.production)
+        if not production and request.remote_addr not in {"127.0.0.1", "::1", "localhost"}:
             return jsonify({"success": False, "error": "Local project data is available only on this computer."}), 403
         origin = request.headers.get("Origin")
-        if origin:
+        if origin and not production:
             parsed = urlparse(origin)
-            if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            allowed = configured.frontend_origins if configured else ()
+            if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"} or (allowed and origin.rstrip("/") not in allowed):
                 return jsonify({"success": False, "error": "Local project data requires a local app origin."}), 403
         limit = 10_000_000 if request.path == "/api/local-data/import" else 1_000_000
         if request.content_length is not None and request.content_length > limit:

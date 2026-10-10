@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 /**
  * hooks/useAskRepo.ts
  * Manages Ask Repo conversational state, Server-Sent Events (SSE) streaming,
@@ -81,7 +82,7 @@ export function useAskRepo({ repoUrl, repositoryModel }: UseAskRepoOptions) {
 
       try {
         // Attempt SSE Streaming first
-        const response = await fetch("/api/ask/stream", {
+        const response = await apiFetch("/api/ask/stream", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -162,7 +163,7 @@ export function useAskRepo({ repoUrl, repositoryModel }: UseAskRepoOptions) {
 
       // Fallback: Standard JSON /api/ask
       try {
-        const response = await fetch("/api/ask", {
+        const response = await apiFetch("/api/ask", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -2,6 +2,7 @@ import base64
 import concurrent.futures
 import os
 import requests
+import time
 from dotenv import load_dotenv
 from cache_manager import (
     get_cached_repo_info,
@@ -15,6 +16,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 BASE_URL = "https://api.github.com"
+
+
+def _safe_get(url, **kwargs):
+    """Retry idempotent GETs once for transport/transient server failures only."""
+    for attempt in range(2):
+        try:
+            response = requests.get(url, **kwargs)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt:
+                raise
+        else:
+            if response.status_code not in {502, 503, 504} or attempt:
+                return response
+        time.sleep(0.25 * (attempt + 1))
 
 
 def get_headers():
@@ -146,11 +161,11 @@ def get_repo_info(owner, repo):
     headers = get_headers()
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = _safe_get(url, headers=headers, timeout=15)
     except requests.exceptions.Timeout:
         raise RuntimeError("GitHub API request timed out. Please try again.")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Unable to connect to GitHub: {e}")
+    except requests.exceptions.RequestException:
+        raise RuntimeError("Unable to connect to GitHub. Please try again.")
 
     handle_github_response(response, resource_name=f"Repository '{owner}/{repo}'")
 
@@ -178,11 +193,11 @@ def get_tree(owner, repo, branch):
     headers = get_headers()
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=20)
+        response = _safe_get(url, params=params, headers=headers, timeout=20)
     except requests.exceptions.Timeout:
         raise RuntimeError("GitHub API request timed out while fetching file tree. Please try again.")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Unable to connect to GitHub: {e}")
+    except requests.exceptions.RequestException:
+        raise RuntimeError("Unable to connect to GitHub. Please try again.")
 
     handle_github_response(response, resource_name=f"Repository tree for '{owner}/{repo}'")
 
@@ -212,11 +227,11 @@ def get_file_content(owner, repo, path, branch=None):
     headers = get_headers()
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        response = _safe_get(url, params=params, headers=headers, timeout=15)
     except requests.exceptions.Timeout:
         raise RuntimeError(f"GitHub API request timed out while fetching {path}.")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Unable to connect to GitHub to fetch {path}: {e}")
+    except requests.exceptions.RequestException:
+        raise RuntimeError("Unable to connect to GitHub to fetch the file.")
 
     handle_github_response(response, resource_name=f"File '{path}'")
 

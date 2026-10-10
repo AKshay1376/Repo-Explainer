@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiClient"
 import React, { useEffect, useMemo, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { HealthCategory, HealthFinding, HealthLevel, ProjectHealthResult } from "../../types/projectHealth"
@@ -37,7 +38,7 @@ export const ProjectHealthView: React.FC<Props> = ({ repoUrl, model, onOpenSourc
     const controller = new AbortController()
     setLoading(true)
     setError("")
-    fetch("/api/health/project", {
+    apiFetch("/api/health/project", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, repository_model: model }), signal: controller.signal,
     }).then(async response => {

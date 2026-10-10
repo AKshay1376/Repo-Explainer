@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 # Ensure .env is explicitly loaded before any submodules
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+from config import load_settings
+settings = load_settings()
+logging.basicConfig(level=logging.INFO, format="%(message)s" if settings.production else
+                    "%(asctime)s [%(levelname)s] %(message)s")
 
 import sys
 from flask import Flask, request, jsonify, send_from_directory, render_template_string, Response
@@ -59,6 +63,11 @@ from humanize.service import _api_surface
 from source_service import detect_language
 from urllib.parse import urlparse
 from pathlib import Path
+from deployment.security import install_security, error_response
+from deployment.observability import install_observability
+from deployment.storage import configure_temp
+from jobs import JobService
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
@@ -69,9 +78,53 @@ default_refactor_service = RefactorPlannerService(default_impact_service, defaul
 _local_patch_service = None
 _local_validator_service = None
 app = Flask(__name__, static_folder=None)
+if settings.production:
+    configure_temp(settings)
+    if os.name != "nt" and not os.path.ismount(settings.data_dir):
+        logging.getLogger(__name__).warning("DATA_DIR is not a mount point; verify durable storage before serving users.")
+app.config["DEPLOYMENT_SETTINGS"] = settings
+if settings.trusted_proxy_count:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=settings.trusted_proxy_count,
+                            x_proto=settings.trusted_proxy_count, x_host=settings.trusted_proxy_count)
+install_observability(app)
+install_security(app, settings)
 init_limiter(app)
-default_persistence_service = PersistenceService()
+app.view_functions["login"] = limiter.limit("5 per minute")(app.view_functions["login"])
+default_persistence_service = PersistenceService(settings.database_path)
+if settings.production:
+    default_persistence_service.db.check_ready()
 app.register_blueprint(create_blueprint(default_persistence_service))
+
+
+def _run_analysis_job(repo_url):
+    owner, repo = validate_github_url(repo_url)
+    cached = get_cached_analysis(owner, repo)
+    if cached is None:
+        result = analyze_repository(owner, repo)
+        raw_stack = result["tech_stack"]
+        payload = {
+            "success": True, "info": result["info"],
+            "tech_stack": raw_stack.get("stack_list", []) if isinstance(raw_stack, dict) else list(raw_stack),
+            "detected_technologies": raw_stack.get("detected_technologies", []) if isinstance(raw_stack, dict) else [],
+            "folder_summary": result["folder_summary"], "key_files": result["key_files"],
+            "report": generate_report(result["info"], result["tech_stack"],
+                                      result["folder_summary"], result["key_file_contents"]),
+            "repository_model": result.get("repository_model"),
+        }
+        set_cached_analysis(owner, repo, payload)
+        if result.get("repository_model"):
+            set_cached_repository_model(owner, repo, result["repository_model"])
+        if result.get("key_file_contents"):
+            set_cached_file_contents(owner, repo, result["key_file_contents"])
+        cached = payload
+    _remember_analysis(owner, repo, cached)
+    project = default_persistence_service.find_project(repo_url)
+    return project["id"] if project else None
+
+
+job_service = JobService(default_persistence_service.db, _run_analysis_job,
+                         workers=settings.worker_threads, queue_limit=settings.job_limit,
+                         timeout_seconds=settings.job_timeout)
 
 
 def _remember_analysis(owner, repo, payload):
@@ -491,7 +544,6 @@ def api_patch_ai_generate():
         logger.exception("AI patch generation failed")
         return jsonify({"success": False, "error": "AI patch generation failed."}), 502
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
@@ -577,17 +629,28 @@ FALLBACK_HTML = """
 
 @app.after_request
 def add_cors_and_security_headers(response):
-    if request.blueprint != "local_persistence":
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    origin = request.headers.get("Origin", "").rstrip("/")
+    if origin and origin in settings.frontend_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token, X-Request-ID"
+        response.headers["Vary"] = "Origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+        "font-src 'self' data:; connect-src 'self'")
     return response
 
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
+    if settings.production:
+        return jsonify({"status": "ok"})
     auth_info = verify_github_auth()
     return jsonify({
         "status": "ok",
@@ -601,6 +664,73 @@ def health_check():
             "rate_remaining": auth_info["remaining"],
         }
     })
+
+
+@app.get("/api/ready")
+def readiness():
+    try:
+        default_persistence_service.db.check_ready()
+        if settings.production and not os.path.isfile(os.path.join(FRONTEND_DIST, "index.html")):
+            raise RuntimeError("Frontend build is missing.")
+        if not job_service.threads or not any(worker.is_alive() for worker in job_service.threads):
+            raise RuntimeError("Analysis workers are unavailable.")
+    except (OSError, ValueError, RuntimeError):
+        return error_response("not_ready", "Application dependencies are not ready.", 503)
+    return jsonify({"status": "ready"})
+
+
+@app.get("/api/version")
+def version():
+    return jsonify({"version": settings.app_version, "environment": settings.environment,
+                    "commit_sha": settings.commit_sha or None,
+                    "build_timestamp": settings.build_timestamp or None})
+
+
+@app.get("/api/capabilities")
+def capabilities():
+    return jsonify({"success": True, "capabilities": settings.capabilities()})
+
+
+@app.get("/api/metrics")
+def metrics():
+    counters, lock = app.extensions["repo_metrics"]
+    with lock:
+        snapshot = dict(counters)
+    snapshot["queued_jobs"] = job_service.pending.qsize()
+    return jsonify({"success": True, "metrics": snapshot})
+
+
+@app.route("/api/jobs", methods=["POST"])
+@limiter.limit("5 per minute")
+def create_job():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("invalid_request", "A JSON object is required.", 400)
+    try:
+        job = job_service.submit(data.get("type"), data.get("repo_url"))
+    except OverflowError:
+        return error_response("queue_full", "Analysis queue is full. Try again later.", 429)
+    except ValueError as error:
+        return error_response("invalid_request", str(error), 400)
+    return jsonify({"success": True, "job": job}), 202
+
+
+@app.get("/api/jobs/<job_id>")
+def get_job(job_id):
+    try:
+        return jsonify({"success": True, "job": job_service.get(job_id)})
+    except ValueError:
+        return error_response("job_not_found", "Job not found.", 404)
+
+
+@app.post("/api/jobs/<job_id>/cancel")
+def cancel_job(job_id):
+    try:
+        return jsonify({"success": True, "job": job_service.cancel(job_id)})
+    except ValueError:
+        return error_response("job_not_found", "Job not found.", 404)
+    except RuntimeError as error:
+        return error_response("cannot_cancel", str(error), 409)
 
 
 @app.route("/api/health/project", methods=["POST", "OPTIONS"])
@@ -1614,6 +1744,8 @@ def api_download():
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST"])
 @app.route("/<path:path>", methods=["GET", "POST"])
 def serve_spa(path):
+    if path == "api" or path.startswith("api/"):
+        return error_response("not_found", "API route not found.", 404)
     # Handle legacy POST on root route for backward compatibility
     if request.method == "POST" and (path == "" or path == "index.html"):
         github_url = request.form.get("github_url", "").strip()
@@ -1653,20 +1785,10 @@ def serve_spa(path):
 
 
 if __name__ == "__main__":
-    is_dev = os.getenv("FLASK_ENV") == "development" or os.getenv("FLASK_DEBUG", "0") in ("1", "true")
-    is_prod_flag = "--prod" in sys.argv or os.getenv("SERVER_MODE") == "production"
-    port = int(os.getenv("PORT", 5000))
-    auth = verify_github_auth()
-    logger.info("GitHub Auth Status: %s | Limit: %s | Remaining: %s", auth["auth_status"], auth["limit"], auth["remaining"])
-
-    if is_prod_flag or (not is_dev and os.getenv("FLASK_ENV") == "production"):
-        try:
-            from waitress import serve
-            logger.info("Starting production server (Waitress) on port %d...", port)
-            serve(app, host="0.0.0.0", port=port)
-        except ImportError:
-            logger.warning("Waitress not available, falling back to standard server.")
-            app.run(host="0.0.0.0", port=port, debug=False)
+    if settings.production or "--prod" in sys.argv:
+        from waitress import serve
+        logger.info("Starting Waitress on %s:%d", settings.host, settings.port)
+        serve(app, host=settings.host, port=settings.port, threads=max(4, settings.worker_threads))
     else:
-        logger.info("Starting development server on port %d (debug=%s)...", port, is_dev)
-        app.run(host="0.0.0.0", port=port, debug=is_dev)
+        logger.info("Starting local server on %s:%d", settings.host, settings.port)
+        app.run(host=settings.host, port=settings.port, debug=settings.debug)

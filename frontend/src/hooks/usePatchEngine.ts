@@ -1,9 +1,10 @@
+import { apiFetch } from "../apiClient"
 import { useCallback, useState } from "react"
 import type { RepositoryModel } from "../types/repository"
 import type { PatchHistoryItem, PatchSet, PatchTrigger } from "../types/patch"
 
 const post = async <T>(url: string, body: object): Promise<T> => {
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  const response = await apiFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
   const result = await response.json()
   if (!response.ok || !result.success) throw new Error(result.error || `Patch request failed (${response.status})`)
   return result as T
@@ -21,7 +22,7 @@ export const usePatchEngine = (repoUrl: string, model: RepositoryModel) => {
 
   const refreshHistory = useCallback(async () => {
     try {
-      const response = await fetch("/api/patch/history")
+      const response = await apiFetch("/api/patch/history")
       const result = await response.json()
       if (response.ok && result.success) { setHistory(result.patches); return result.patches as PatchHistoryItem[] }
     } catch { /* unavailable until a local checkout is configured */ }
@@ -143,7 +144,7 @@ export const usePatchEngine = (repoUrl: string, model: RepositoryModel) => {
   const load = useCallback(async (id: string) => {
     setLoading(true); setError(null); setSelectedDiff(null)
     try {
-      const response = await fetch(`/api/patch/${encodeURIComponent(id)}`)
+      const response = await apiFetch(`/api/patch/${encodeURIComponent(id)}`)
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.error || "Patch unavailable.")
       if (result.preview_available === false) { setPatch(null); setHistorical(result as PatchHistoryItem); setValidation(null) }

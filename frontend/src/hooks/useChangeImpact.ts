@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 /**
  * hooks/useChangeImpact.ts
  * Manages Change Impact Analysis state, API interactions with /api/impact,
@@ -103,7 +104,7 @@ export function useChangeImpact({ repoUrl, repositoryModel }: UseChangeImpactOpt
       if (trigger.depth) setDepth(trigger.depth)
 
       try {
-        const response = await fetch("/api/impact", {
+        const response = await apiFetch("/api/impact", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

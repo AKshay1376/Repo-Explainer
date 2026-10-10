@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 import { useEffect, useMemo, useState } from "react"
 import type { SourceResponse } from "../types/source"
 
@@ -22,7 +23,7 @@ export function useSourceFile(repoUrl: string, path: string | null, ref: string,
 
     const controller = new AbortController()
     setState({ key, data: null, error: null, loading: true })
-    fetch(historical ? "/api/history/source" : "/api/source", {
+    apiFetch(historical ? "/api/history/source" : "/api/source", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(historical ? { repo_url: repoUrl, path, sha: ref } : { repo_url: repoUrl, path, ref }),

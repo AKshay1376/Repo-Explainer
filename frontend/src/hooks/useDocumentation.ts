@@ -1,3 +1,4 @@
+import { apiFetch } from "../apiClient"
 import { useCallback, useState } from "react"
 import type { DocSection, DocumentTarget, GeneratedDocument } from "../types/documentation"
 import type { RepositoryModel } from "../types/repository"
@@ -10,7 +11,7 @@ export function useDocumentation(repoUrl: string, model: RepositoryModel) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const request = useCallback(async <T,>(endpoint: string, payload: Record<string, unknown>): Promise<T> => {
-    const response = await fetch(`/api/docs/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" },
+    const response = await apiFetch(`/api/docs/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, repository_model: model, ...payload }) })
     const result = await response.json()
     if (!response.ok || !result.success) throw new Error(result.error || "Documentation request failed.")
@@ -36,7 +37,7 @@ export function useDocumentation(repoUrl: string, model: RepositoryModel) {
   }, [generate, request])
   const download = useCallback(async (format: "markdown" | "html" | "json") => {
     if (!document) return
-    const response = await fetch("/api/docs/export", { method: "POST", headers: { "Content-Type": "application/json" },
+    const response = await apiFetch("/api/docs/export", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repo_url: repoUrl, document_id: document.id, format }) })
     if (!response.ok) throw new Error("Document export failed.")
     const blob = await response.blob(); const url = URL.createObjectURL(blob)

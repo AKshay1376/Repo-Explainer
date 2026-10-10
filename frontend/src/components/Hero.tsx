@@ -7,6 +7,7 @@ interface HeroProps {
   error?: string | null
   initialUrl?: string
   onClearError?: () => void
+  onQueue?: (url: string) => void
 }
 
 const SAMPLE_REPOS = [
@@ -21,6 +22,7 @@ export const Hero: React.FC<HeroProps> = ({
   error,
   initialUrl = "",
   onClearError,
+  onQueue,
 }) => {
   const [url, setUrl] = useState(initialUrl)
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -109,6 +111,14 @@ export const Hero: React.FC<HeroProps> = ({
               <ArrowRightIcon className="h-4 w-4" strokeWidth={2} />
             </button>
           </form>
+          {onQueue && <button type="button" disabled={isLoading} onClick={() => {
+            const trimmed = url.trim()
+            if (!trimmed || (!trimmed.includes("github.com/") && !/^[a-zA-Z0-9_.\-]+\/[a-zA-Z0-9_.\-]+$/.test(trimmed))) {
+              setValidationError("Enter a full URL or owner/repo shorthand")
+              return
+            }
+            onQueue(trimmed)
+          }} className="mt-3 text-xs font-medium text-brand hover:underline disabled:opacity-50">Analyze in background</button>}
 
           {validationError && (
             <p className="mt-2.5 text-left text-xs font-medium text-[#D70015] dark:text-[#FF453A] pl-2">
@@ -226,4 +236,3 @@ adapters.py (HTTPAdapter ➔ urllib3 connection pool)`}
 }
 
 export default Hero
-

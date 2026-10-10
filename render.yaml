@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: repo-explainer
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/ready
+    maxShutdownDelaySeconds: 60
+    disk:
+      name: repo-explainer-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: AUTH_MODE
+        value: required
+      - key: WEB_WORKERS
+        value: "1"
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: APP_SECRET_KEY
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false

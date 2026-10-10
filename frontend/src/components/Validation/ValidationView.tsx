@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiClient"
 import React, { useEffect, useState } from "react"
 import { stageGraph, type ValidatorProfile, type ValidatorResult } from "../../types/validators"
 
@@ -5,7 +6,7 @@ interface Props { repoUrl: string; paths?: string[]; patchId?: string; compact?:
   initialProfile?: ValidatorProfile | null; initialHistory?: ValidatorResult[] }
 
 const post = async <T,>(path: string, body: object): Promise<T> => {
-  const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  const response = await apiFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
   const result = await response.json()
   if (!response.ok || !result.success) throw new Error(result.error || "Validator request failed")
   return result as T
@@ -21,8 +22,8 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
   const [busy, setBusy] = useState(false)
   const refresh = async () => {
     const [p, h] = await Promise.all([
-      fetch(`/api/validators/profile?repo_url=${encodeURIComponent(repoUrl)}`).then((response) => response.json()),
-      fetch(`/api/validators/history?repo_url=${encodeURIComponent(repoUrl)}`).then((response) => response.json()),
+      apiFetch(`/api/validators/profile?repo_url=${encodeURIComponent(repoUrl)}`).then((response) => response.json()),
+      apiFetch(`/api/validators/history?repo_url=${encodeURIComponent(repoUrl)}`).then((response) => response.json()),
     ])
     if (!p.success) throw new Error(p.error || "Validation profile unavailable")
     setProfile(p.profile); setHistory(h.history || [])

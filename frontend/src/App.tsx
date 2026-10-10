@@ -1,4 +1,5 @@
-import React, { useState } from "react"
+import { apiFetch } from "./apiClient"
+import React, { useEffect, useState } from "react"
 import { Navbar } from "./components/Navbar"
 import { Hero } from "./components/Hero"
 import { ProductStory } from "./components/ProductStory"
@@ -8,11 +9,21 @@ import { LegalModal, type LegalDocType } from "./components/LegalModal"
 import { ShieldCheckIcon, TerminalIcon, GithubIcon, InstagramIcon } from "./components/ui/icons"
 import { localApi } from "./hooks/useProjects"
 import type { SavedProject } from "./types/persistence"
+import { setCsrfToken } from "./apiClient"
+import { jobLabel } from "./lib/deployment"
+import { ServiceUnavailable } from "./components/ServiceUnavailable"
 
 const HomeView = React.lazy(() => import("./components/Home/HomeView").then(module => ({ default: module.HomeView })))
 const ProjectDashboard = React.lazy(() => import("./components/Projects/ProjectDashboard").then(module => ({ default: module.ProjectDashboard })))
 
 export const App: React.FC = () => {
+  const [runtime, setRuntime] = useState<"checking" | "online" | "offline">("checking")
+  const [authMode, setAuthMode] = useState("disabled")
+  const [authenticated, setAuthenticated] = useState(false)
+  const [password, setPassword] = useState("")
+  const [authError, setAuthError] = useState("")
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>({})
+  const [job, setJob] = useState<{ id: string; status: string; progress: number; message: string; repo_url: string } | null>(null)
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "saved" | "error">("idle")
   const [currentUrl, setCurrentUrl] = useState<string>("")
   const [data, setData] = useState<AnalysisData | null>(null)
@@ -21,6 +32,73 @@ export const App: React.FC = () => {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [requestedTab, setRequestedTab] = useState<string | null>(null)
   const [requestedFile, setRequestedFile] = useState<string | null>(null)
+
+  const checkServer = async () => {
+    setRuntime("checking")
+    try {
+      const [sessionResponse, capabilityResponse] = await Promise.all([
+        apiFetch("/api/auth/session"), apiFetch("/api/capabilities"),
+      ])
+      if (!sessionResponse.ok || !capabilityResponse.ok) throw new Error("Server unavailable")
+      const session = await sessionResponse.json()
+      const available = await capabilityResponse.json()
+      setAuthMode(session.auth_mode || "disabled")
+      setAuthenticated(Boolean(session.authenticated))
+      setCsrfToken(session.csrf_token || null)
+      setCapabilities(available.capabilities || {})
+      setRuntime("online")
+    } catch { setRuntime("offline") }
+  }
+  useEffect(() => {
+    void checkServer()
+    const required = () => { setAuthenticated(false); setCsrfToken(null) }
+    window.addEventListener("repo-auth-required", required)
+    return () => window.removeEventListener("repo-auth-required", required)
+  }, [])
+
+  const signIn = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setAuthError("")
+    try {
+      const response = await apiFetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || "Sign in failed")
+      setCsrfToken(result.csrf_token)
+      setAuthenticated(true)
+      setPassword("")
+    } catch (error) { setAuthError(error instanceof Error ? error.message : "Sign in failed") }
+  }
+
+  const queueAnalysis = async (url: string) => {
+    try {
+      const response = await apiFetch("/api/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "repository_analysis", repo_url: url }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || "Could not queue analysis")
+      setJob(result.job)
+    } catch (error) { setErrorMessage(error instanceof Error ? error.message : "Could not queue analysis") }
+  }
+  useEffect(() => {
+    if (!job || !["queued", "running"].includes(job.status)) return
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await apiFetch(`/api/jobs/${job.id}`)
+        if (!response.ok) throw new Error()
+        setJob((await response.json()).job)
+      } catch { setJob(previous => previous && { ...previous, status: "failed", message: "Job status unavailable" }) }
+    }, 1200)
+    return () => window.clearInterval(timer)
+  }, [job?.id, job?.status])
+  const cancelJob = async () => {
+    if (!job) return
+    const response = await apiFetch(`/api/jobs/${job.id}/cancel`, { method: "POST" })
+    if (response.ok) setJob((await response.json()).job)
+  }
 
   const handleOpenProject = (project: SavedProject) => {
     void localApi(`/projects/${project.id}/open`, "POST", {}).catch(() => undefined)
@@ -39,7 +117,7 @@ export const App: React.FC = () => {
     setStatus("loading")
 
     try {
-      const response = await fetch("/api/analyze", {
+      const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -88,15 +166,45 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
+  if (runtime === "offline") return <ServiceUnavailable retry={() => void checkServer()} />
+  if (runtime === "checking") return (
+    <main className="min-h-screen flex items-center justify-center bg-canvas text-ink p-8">
+      <div className="max-w-md rounded-2xl border border-line bg-surface p-8 text-center space-y-4">
+        <h1 className="text-xl font-semibold">Connecting to Repo Explainer…</h1>
+      </div>
+    </main>
+  )
+
+  if (authMode !== "disabled" && !authenticated) return (
+    <main className="min-h-screen flex items-center justify-center bg-canvas text-ink p-8">
+      <form onSubmit={event => void signIn(event)} className="w-full max-w-sm rounded-2xl border border-line bg-surface p-8 space-y-4">
+        <h1 className="text-xl font-semibold">Sign in to Repo Explainer</h1>
+        <p className="text-sm text-ink-secondary">This deployment requires a session before project actions.</p>
+        <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required
+          aria-label="Deployment password" className="w-full rounded-lg border border-line bg-canvas p-3" />
+        {authError && <p role="alert" className="text-sm text-red-600">{authError}</p>}
+        <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-white">Sign in</button>
+      </form>
+    </main>
+  )
+
   return (
     <div className="min-h-screen flex flex-col bg-canvas text-ink selection:bg-brand/20 selection:text-brand-text">
       <Navbar onReset={handleReset} hasAnalysis={status === "success"} />
 
       <main className="flex-1">
+        {job && <div role="status" className="mx-auto max-w-5xl px-6 pt-4 text-sm text-ink">
+          <div className="rounded-xl border border-line bg-surface p-3">
+            <strong>Background analysis: {jobLabel(job.status)}</strong> · {job.progress}% · {job.message}
+            {job.status === "queued" && <button onClick={() => void cancelJob()} className="ml-3 text-brand">Cancel</button>}
+            {job.status === "completed" && <button onClick={() => void handleAnalyze(job.repo_url)} className="ml-3 text-brand">Open project</button>}
+            {["completed", "failed", "cancelled"].includes(job.status) && <button onClick={() => setJob(null)} className="ml-3 text-ink-secondary">Dismiss</button>}
+          </div>
+        </div>}
         {status === "idle" && (
           <>
             <React.Suspense fallback={<p className="p-8 text-sm">Loading saved projects…</p>}><HomeView onAnalyze={handleAnalyze} onOpenProject={handleOpenProject} /></React.Suspense>
-            <Hero onAnalyze={handleAnalyze} isLoading={false} />
+            <Hero onAnalyze={handleAnalyze} onQueue={queueAnalysis} isLoading={false} />
             <ProductStory onSelectSample={(sampleUrl) => handleAnalyze(sampleUrl)} />
           </>
         )}
@@ -109,6 +217,7 @@ export const App: React.FC = () => {
           <>
             <Hero
               onAnalyze={handleAnalyze}
+              onQueue={queueAnalysis}
               isLoading={false}
               error={errorMessage}
               initialUrl={currentUrl}
@@ -122,7 +231,7 @@ export const App: React.FC = () => {
         )}
 
         {status === "success" && data && (
-          <Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} projectId={projectId} initialTab={requestedTab} initialFileOverride={requestedFile} />
+          <Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} projectId={projectId} initialTab={requestedTab} initialFileOverride={requestedFile} capabilities={capabilities} />
         )}
         {status === "saved" && projectId && <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><React.Suspense fallback={<p className="text-sm">Loading saved project…</p>}><ProjectDashboard projectId={projectId} currentSha={null} onNavigate={view => void handleAnalyze(currentUrl, view)} onOpenFile={path => void handleAnalyze(currentUrl, "explorer", path)} onHome={handleReset} /></React.Suspense></div>}
       </main>
@@ -139,6 +248,11 @@ export const App: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-5 text-xs text-ink-secondary">
+              {authMode !== "disabled" && <button onClick={() => {
+                void apiFetch("/api/auth/logout", { method: "POST" }).finally(() => {
+                  setCsrfToken(null); setAuthenticated(false); setStatus("idle")
+                })
+              }} className="hover:text-brand transition-colors">Sign out</button>}
               <button
                 onClick={() => setLegalDoc("privacy")}
                 className="hover:text-brand transition-colors cursor-pointer"

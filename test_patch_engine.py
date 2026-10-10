@@ -308,7 +308,7 @@ class PatchEngineTests(unittest.TestCase):
         client = web_app.app.test_client()
         payload = {"repo_url": "fixture/repo", "source": "humanize", "path": "sample.py", "suggestion_id": "trailing_whitespace"}
         self.assertEqual(client.post("/api/patch/generate", json=payload,
-                                     headers={"Origin": "https://evil.example"}).status_code, 400)
+                                     headers={"Origin": "https://evil.example"}).status_code, 403)
         self.assertEqual(client.post("/api/patch/ai-generate", json={"repo_url": "fixture/repo", "path": "sample.py"}).status_code, 400)
         generated = client.post("/api/patch/generate", json=payload).get_json()
         self.assertTrue(generated["success"], generated)
