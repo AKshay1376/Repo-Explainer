@@ -147,10 +147,10 @@ def _module_name(root: Path, path: str) -> str:
 
 
 def move_python_file(root: Path, source: str, destination: str) -> list[PatchFile]:
-    old_module = _module_name(root, source)
-    new_module = _module_name(root, destination)
     target = safe_target(root, source)
     safe_path(root, destination, must_exist=False)
+    old_module = _module_name(root, source)
+    new_module = _module_name(root, destination)
     raw = target.read_bytes()
     before = readable_text(source, raw)
     tree = ast.parse(before)
