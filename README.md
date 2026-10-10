@@ -294,6 +294,12 @@ History routes are `GET /api/history/status?repo_url=owner/repo` and `POST /api/
 
 Maintenance hotspot scores combine normalized churn (35), change frequency (25), current dependency centrality (20), and the cached Humanize maintainability score (20). Labels are Stable (0–24), Active (25–49), Hotspot (50–74), and Critical Hotspot (75–100). These are sampled maintenance indicators, not claims that code is defective. Architecture evolution compares Git trees at HEAD and available 7/30/90-day checkpoints; it does not infer route or dependency counts from file names.
 
+### Source-backed Documentation Generator
+
+The lazy-loaded Documentation tab generates Project Overview, Architecture, Module, API, Data Models, Execution Flow, Onboarding, Contributor Guide, Change Summary, Technical Debt, Refactor Notes, and README Draft documents from the current RepositoryModel and available cached analyses. Facts, inferences, and unknowns are labeled separately; citations open Source Viewer. Mermaid diagrams are exported as source blocks. API parameters or response schemas are marked unknown when static evidence does not establish them. Normal generation uses zero LLM calls and never executes analyzed code.
+
+Use `POST /api/docs/generate` with `repo_url`, `type`, optional `scope` and bounded `options`. `GET /api/docs/types` lists types. `POST /api/docs/section` refreshes a section using the same cache, `/api/docs/readme` returns a preview and any cached/current local README, and `/api/docs/export` downloads a generated document by ID as Markdown, HTML, or JSON. Exports are escaped and script-free. README replacement is offered only through a Patch Review preview and is never automatic. `POST /api/docs/ai-polish` requires explicit confirmation and an existing generated section; it returns an advisory writing preview while retaining the original facts and citations.
+
 ### `POST /api/download`
 Streams the generated Markdown report as a downloadable `.md` file attachment.
 

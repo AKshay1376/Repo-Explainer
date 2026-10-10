@@ -44,6 +44,7 @@ interface FileInspectorProps {
   onHumanize?: (path: string) => void
   onCreatePlan?: (trigger: PlanTrigger) => void
   onCreatePatch?: (trigger: PatchTrigger) => void
+  onDocument?: (path: string) => void
 }
 
 export const FileInspector: React.FC<FileInspectorProps> = ({
@@ -63,6 +64,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
   onHumanize,
   onCreatePlan,
   onCreatePatch,
+  onDocument,
 }) => {
   const [showEvidence, setShowEvidence] = useState(false)
   const [expandedEdges, setExpandedEdges] = useState<Record<string, boolean>>({})
@@ -178,6 +180,7 @@ export const FileInspector: React.FC<FileInspectorProps> = ({
           {onHumanize && <button onClick={() => onHumanize(filePath)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Humanize</button>}
           {onCreatePatch && <button onClick={() => onCreatePatch({ source: "selection", path: filePath, startLine: 1, endLine: 1, transformation: "trim_trailing_whitespace" })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Create Patch</button>}
           {onOpenSource && <button onClick={() => onOpenSource({ path: filePath })} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">View Source</button>}
+          {onDocument && <button onClick={() => onDocument(filePath)} className="rounded-xl border border-brand-border bg-brand-surface px-3 py-1 text-xs font-semibold text-brand">Document File</button>}
           {onTraceFile && (
             <button
               onClick={() => onTraceFile(filePath)}

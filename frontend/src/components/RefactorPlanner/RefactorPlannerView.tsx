@@ -16,11 +16,12 @@ interface Props {
   onOpenImpact: (path: string) => void
   onOpenGraph: (path: string) => void
   onCreatePatch?: (trigger: PatchTrigger) => void
+  onDocumentPlan?: (target: string, planType: PlanType) => void
 }
 
 const label = (type: PlanType) => type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 
-export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch }) => {
+export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch, onDocumentPlan }) => {
   const [planType, setPlanType] = useState<PlanType>(trigger?.planType || "rename_symbol")
   const [target, setTarget] = useState(trigger?.target || "")
   const [symbol, setSymbol] = useState(String(trigger?.options?.symbol || ""))
@@ -72,6 +73,7 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
     {plan && <>
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-base font-semibold text-ink">{plan.summary}</h3>
+        {onDocumentPlan && <button onClick={() => onDocumentPlan(plan.target, plan.plan_type)} className="text-xs font-semibold text-brand">Export Refactor Plan</button>}
         <p className="text-xs text-ink-secondary">{plan.risk_level} risk · {plan.confidence} confidence · {plan.estimated_scope.files} files · {plan.steps.length} ordered steps · revision {plan.revision.slice(0, 12)} · 0 LLM calls</p>
         {plan.risk_factors.map((item) => <p key={item} className="text-xs text-amber-700">Risk: {item}</p>)}
         {plan.warnings.map((item) => <p key={item} className="text-xs text-amber-700">{item}</p>)}

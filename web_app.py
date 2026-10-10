@@ -47,6 +47,8 @@ from humanize.service import HumanizeService
 from project_health import ProjectHealthService
 from git_history import GitHistoryService
 from git_history.repository import GitHistoryError
+from documentation import DocumentationService
+from documentation.models import TYPES
 from refactor_planner.service import RefactorPlannerService
 from patch_engine import PatchService
 from patch_engine.validator import readable_text, safe_target
@@ -60,6 +62,7 @@ default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
 default_project_health_service = ProjectHealthService(default_humanize_service)
 _local_history_service = None
+default_documentation_service = DocumentationService()
 default_refactor_service = RefactorPlannerService(default_impact_service, default_trace_service)
 _local_patch_service = None
 _local_validator_service = None
@@ -1281,6 +1284,229 @@ def api_refactor_explain():
     except Exception:
         logger.exception("Refactor AI explanation failed")
         return jsonify({"success": False, "error": "AI explanation failed."}), 502
+
+
+@app.route("/api/docs/types", methods=["GET"])
+def api_docs_types():
+    return jsonify({"success": True, "types": list(TYPES), "llm_calls": 0})
+
+
+def _docs_request():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("repo_url"), str):
+        raise ValueError("A repository URL and JSON object are required.")
+    owner, repo = validate_github_url(data["repo_url"])
+    model = get_cached_repository_model(owner, repo) or data.get("repository_model") or {}
+    metadata = model.get("metadata") or {} if isinstance(model, dict) else {}
+    if not isinstance(model, dict) or not isinstance(metadata, dict) or (metadata and (
+        str(metadata.get("owner", owner)).lower() != owner.lower() or
+        str(metadata.get("repo", repo)).lower() != repo.lower()
+    )):
+        raise ValueError("Repository model does not match the requested repository.")
+    return data, owner, repo, model
+
+
+def _docs_context(data, owner, repo, model):
+    """Request only the existing analyses needed for this document type."""
+    doc_type = data.get("type")
+    scope = data.get("scope")
+    options = data.get("options") or {}
+    if not isinstance(options, dict):
+        raise ValueError("Documentation options must be an object.")
+    for name in ("query", "route", "period", "before", "after", "plan_type", "flow_id"):
+        value = options.get(name)
+        if value is not None and (not isinstance(value, str) or len(value) > 300):
+            raise ValueError(f"Invalid {name} documentation option.")
+    context = {}
+    if doc_type in {"MODULE", "CHANGE_SUMMARY", "TECH_DEBT"}:
+        try:
+            history, _, _, _ = _history_context(data)
+            if doc_type == "MODULE" and scope:
+                context["history"] = history.file(scope, limit=5)
+            elif doc_type == "CHANGE_SUMMARY":
+                period = options.get("period", "latest")
+                if period not in {"latest", "7d", "30d", "range"}:
+                    raise ValueError("Unsupported change-summary period.")
+                since = "7 days ago" if period == "7d" else "30 days ago" if period == "30d" else None
+                # Git's date parser remains inside the existing validated timeline API.
+                if since:
+                    from datetime import datetime, timedelta, timezone
+                    since = (datetime.now(timezone.utc) - timedelta(days=7 if period == "7d" else 30)).date().isoformat()
+                context["history"] = history.timeline(limit=30, since=since)
+                context["evolution"] = history.evolution()
+                if period == "range":
+                    before = _docs_resolve_revision(history, options.get("before"))
+                    after = _docs_resolve_revision(history, options.get("after"))
+                    context["comparison"] = history.compare(before, after)
+                    from git_history.parser import FORMAT, parse_log
+                    raw = history.git.run("log", f"--format={FORMAT}", "--numstat", "-z", "-M", "-n", "31", f"{before}..{after}", timeout=25)
+                    commits = parse_log(raw)
+                    context["history"] = {"commits": commits[:30], "partial": len(commits) > 30}
+            else:
+                context["hotspots"] = history.hotspots(owner, repo, model, scan=100, limit=10)
+        except (GitHistoryError, ValueError) as error:
+            if doc_type == "CHANGE_SUMMARY" and options.get("period") == "range":
+                raise ValueError(str(error)) from error
+            context["history_warning"] = "Local Git history was unavailable."
+    if doc_type in {"TECH_DEBT", "MODULE"}:
+        context["health"] = default_project_health_service.analyze(owner, repo, model)
+    if doc_type == "MODULE" and isinstance(scope, str) and scope in (model.get("files") or {}):
+        impact = default_impact_service.analyze_impact(model, target_file=scope, depth=2)
+        if impact.get("success"):
+            context["impact"] = impact.get("analysis")
+        audit = default_humanize_service.audit_repository(owner, repo, model)
+        context["humanize"] = next((item for item in audit.get("top_files", []) if item.get("path") == scope), None)
+        context["trace"] = default_trace_service.trace_execution(model, start_file=scope,
+            file_contents=get_cached_file_contents(owner, repo) or {})
+    if doc_type == "EXECUTION_FLOW":
+        context["trace"] = default_trace_service.trace_execution(model, query=options.get("query"),
+            start_file=scope if scope in (model.get("files") or {}) else None,
+            route=options.get("route"), file_contents=get_cached_file_contents(owner, repo) or {})
+        if options.get("flow_id"):
+            selected_flows = [flow for flow in context["trace"].get("flows", []) if flow.get("id") == options["flow_id"]]
+            if selected_flows:
+                context["trace"] = {**context["trace"], "flows": selected_flows}
+            else:
+                context["flow_warning"] = "Selected flow could not be reproduced exactly; related traces are shown."
+    if doc_type == "REFACTOR_NOTES" and options.get("plan_type") and scope:
+        response = default_refactor_service.plan(owner, repo, model, options["plan_type"], scope)
+        if response.get("success"):
+            context["plan"] = response.get("plan")
+    if doc_type in {"ONBOARDING", "CONTRIBUTOR_GUIDE", "README_DRAFT"}:
+        try:
+            context["validator"] = _validator_context(data).profile()
+        except (ValueError, OSError):
+            pass
+    return context
+
+
+def _docs_resolve_revision(history, value):
+    """Accept a SHA or an exact existing local tag, never arbitrary Git syntax."""
+    if not isinstance(value, str) or not value or len(value) > 100 or value.startswith("-"):
+        raise ValueError("Choose a hexadecimal commit or an existing local tag.")
+    if re.fullmatch(r"[0-9a-fA-F]{7,64}", value):
+        return history.git.require_commit(value)
+    if value not in history.git.text("tag", "--list").splitlines():
+        raise ValueError("Tag is unavailable in local Git history.")
+    resolved = history.git.text("rev-parse", "--verify", f"refs/tags/{value}^{{commit}}").strip()
+    return history.git.require_commit(resolved)
+
+
+def _docs_generate(doc_type_override=None):
+    data, owner, repo, model = _docs_request()
+    if doc_type_override:
+        data = {**data, "type": doc_type_override}
+    context = _docs_context(data, owner, repo, model)
+    result = default_documentation_service.generate(data.get("type"), model, scope=data.get("scope"),
+                                                     options=data.get("options"), context=context)
+    return result, owner, repo
+
+
+@app.route("/api/docs/generate", methods=["POST"])
+def api_docs_generate():
+    try:
+        result, _, _ = _docs_generate()
+        return jsonify(result)
+    except (ValueError, TypeError, GitHistoryError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+
+@app.route("/api/docs/section", methods=["POST"])
+def api_docs_section():
+    try:
+        result, _, _ = _docs_generate()
+        section_id = request.get_json()["section_id"]
+        part = next((part for part in result["sections"] if part["id"] == section_id), None)
+        if not part:
+            raise ValueError("Section not found in this document.")
+        return jsonify({"success": True, "document_id": result["id"], "section": part, "cached": result["cached"], "llm_calls": 0})
+    except (ValueError, TypeError, KeyError, GitHistoryError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+
+@app.route("/api/docs/readme", methods=["POST"])
+def api_docs_readme():
+    try:
+        result, owner, repo = _docs_generate("README_DRAFT")
+        current = (get_cached_file_contents(owner, repo) or {}).get("README.md")
+        if not isinstance(current, str):
+            try:
+                history, _, _, model = _history_context({"repo_url": f"{owner}/{repo}"})
+                state = history.status(owner, repo)
+                if (model.get("metadata") or {}).get("latest_commit_sha") == state.get("head"):
+                    current = history.source(state["head"], "README.md")["file"]["content"]
+            except (GitHistoryError, ValueError, KeyError):
+                current = None
+        safe = sanitize_content("README.md", current) if isinstance(current, str) else None
+        patch_ready = False
+        try:
+            patch = _patch_context({"repo_url": f"{owner}/{repo}"})
+            local = readable_text("README.md", safe_target(patch.root, "README.md").read_bytes())
+            local_safe = sanitize_content("README.md", local)
+            if local_safe == local and len(local) <= 200_000:
+                if safe is None:
+                    safe = local
+                patch_ready = safe == local
+        except (ValueError, OSError):
+            pass
+        draft_markdown, _, _ = default_documentation_service.export(result, "markdown")
+        return jsonify({"success": True, "document": result, "current_readme": safe[:200_000] if safe else None,
+                        "readme_patch_ready": patch_ready, "draft_markdown": draft_markdown, "llm_calls": 0})
+    except (ValueError, TypeError, GitHistoryError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+
+@app.route("/api/docs/ai-polish", methods=["POST"])
+@limiter.limit(get_humanize_ai_limit)
+def api_docs_ai_polish():
+    """Explicit, preview-only prose suggestion for one already grounded section."""
+    try:
+        data, owner, repo, _ = _docs_request()
+        if data.get("confirm_ai") is not True:
+            raise ValueError("Explicit AI polish confirmation is required.")
+        result = default_documentation_service.get(data.get("document_id"))
+        metadata = result.get("repository") or {}
+        if (metadata.get("owner", "").lower(), metadata.get("repo", "").lower()) != (owner.lower(), repo.lower()):
+            raise ValueError("Document does not match the requested repository.")
+        part = next((item for item in result["sections"] if item["id"] == data.get("section_id")), None)
+        if not part:
+            raise ValueError("Choose a generated section to polish.")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("AI polish is unavailable without a configured API key.")
+        from openai import OpenAI
+        evidence = json.dumps({"title": part["title"], "facts": part["facts"],
+            "inferences": part["inferences"], "unknowns": part["unknowns"]}, ensure_ascii=False)[:10_000]
+        response = OpenAI(api_key=api_key).chat.completions.create(
+            model=os.getenv("OPENAI_MODEL") or "gpt-4o-mini", max_tokens=500,
+            messages=[{"role": "system", "content": "Improve wording only. Keep FACT, INFERENCE, and UNKNOWN labels. Do not add claims, citations, or behavior. Return short prose for review."},
+                      {"role": "user", "content": evidence}])
+        preview = sanitize_content("generated-document.txt", response.choices[0].message.content or "") or ""
+        return jsonify({"success": True, "preview_only": True, "polished_preview": preview[:4000],
+                        "original_section": part, "citations": part["citations"], "llm_calls": 1})
+    except (ValueError, TypeError, GitHistoryError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+    except Exception:
+        logger.exception("Documentation AI polish failed")
+        return jsonify({"success": False, "error": "AI polish failed."}), 502
+
+
+@app.route("/api/docs/export", methods=["POST"])
+def api_docs_export():
+    try:
+        data, owner, repo, _ = _docs_request()
+        result = default_documentation_service.get(data.get("document_id"))
+        metadata = result.get("repository") or {}
+        if (metadata.get("owner", "").lower(), metadata.get("repo", "").lower()) != (owner.lower(), repo.lower()):
+            raise ValueError("Document does not match the requested repository.")
+        content, mimetype, extension = default_documentation_service.export(result, data.get("format"))
+        filename = re.sub(r"[^a-zA-Z0-9_-]", "_", result["title"]).strip("_")[:80] or "documentation"
+        response = Response(content, content_type=mimetype)
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}{extension}"'
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except (ValueError, TypeError, GitHistoryError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
 
 
 @app.route("/api/download", methods=["POST"])

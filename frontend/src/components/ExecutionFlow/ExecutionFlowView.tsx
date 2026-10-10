@@ -34,6 +34,7 @@ interface ExecutionFlowViewProps {
   onShowInGraph: (filePath: string) => void
   onExplainFlowWithAsk: (flow: ExecutionFlow) => void
   onAnalyzeImpact?: (trigger: { file?: string; symbol?: string; route?: string }) => void
+  onDocumentFlow?: (flow: ExecutionFlow) => void
 }
 
 const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
@@ -47,6 +48,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
   onShowInGraph,
   onExplainFlowWithAsk,
   onAnalyzeImpact,
+  onDocumentFlow,
 }) => {
   const [direction, setDirection] = useState<"TB" | "LR">("TB")
 
@@ -125,6 +127,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-surface-subtle/30 border-b border-line text-xs shrink-0">
         <StarterFlows model={model} onSelectTrigger={handleSelectStarter} />
         <TraceHistory history={history} onSelectTrigger={handleSelectStarter} />
+        {activeFlow && onDocumentFlow && <button onClick={() => onDocumentFlow(activeFlow)} className="font-semibold text-brand">Document This Flow</button>}
       </div>
 
       {/* 3. Main Body */}
