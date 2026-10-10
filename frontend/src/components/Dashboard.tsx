@@ -62,6 +62,7 @@ const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((mo
 const SourceViewer = React.lazy(() => import("./SourceViewer/SourceViewer").then((module) => ({ default: module.SourceViewer })))
 const PatchReviewView = React.lazy(() => import("./PatchReview/PatchReviewView").then((module) => ({ default: module.PatchReviewView })))
 const ValidationView = React.lazy(() => import("./Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
+const ProjectHealthView = React.lazy(() => import("./ProjectHealth/ProjectHealthView").then((module) => ({ default: module.ProjectHealthView })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -88,12 +89,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
-    repository_model ? "explorer" : "report"
+  const [activeTab, setActiveTab] = useState<"health" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
+    repository_model ? "health" : "report"
   )
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "explorer" : "report"]))
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "health" : "report"]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
+  const navigateTab = React.useCallback((tab: "health" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
@@ -440,6 +441,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* 3. Section Switcher Tabs */}
       <div className="flex items-center justify-between border-b border-line pb-4">
         <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-surface-subtle/80 border border-line">
+          {repository_model && <button onClick={() => navigateTab("health")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "health" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
+            <ZapIcon className="h-4 w-4 text-brand" /><span>Project Health</span>
+          </button>}
           <button
             onClick={() => navigateTab("explorer")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -534,6 +539,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Views stay mounted after first visit so conversations and graph position survive navigation. */}
+      {repository_model && visitedTabs.has("health") && <div hidden={activeTab !== "health"}>
+        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Project Health…</p>}>
+          <ProjectHealthView repoUrl={repoUrl} model={repository_model} onOpenSource={openSource}
+            onAnalyzeImpact={handleAnalyzeImpact} onHumanize={openHumanize} onCreatePlan={openPlan}
+            onAskRepo={handleAskAboutFile} onInspectFile={(path) => { handleSelectFile(path); navigateTab("explorer") }}
+            onCreatePatch={openPatch} onTraceFlow={handleTraceFile} />
+        </React.Suspense>
+      </div>}
       {repository_model && visitedTabs.has("explorer") && <div hidden={activeTab !== "explorer"}>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-5 rounded-3xl border border-line bg-surface shadow-card overflow-hidden">

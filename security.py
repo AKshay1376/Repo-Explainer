@@ -94,6 +94,13 @@ def is_sensitive_file(filename: str) -> bool:
     if any(k in name for k in ("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "service-account", "oauth-credentials")):
         return True
 
+    # Common credential exports and token files may use extensions other than JSON.
+    # Keep documented examples and templates available for normal source inspection.
+    if not name.endswith((".example", ".template", ".sample")) and re.match(
+        r"^(?:credentials?|secrets?|tokens?|api[-_]?keys?)(?:[-_.]|$)", name
+    ):
+        return True
+
     return False
 
 

@@ -281,6 +281,11 @@ Health check endpoint returning service status.
   }
   ```
 
+### `POST /api/health/project`
+Read-only Project Health analysis for an already analyzed repository. Send `{"repo_url":"owner/repo"}`; the server uses its cached RepositoryModel, or accepts a matching `repository_model` in the request when the cache is empty. The response includes `overall_score`, four scored `dimensions`, evidence-backed `findings`, `top_issues`, severity counts, coverage, and warnings. It makes no LLM calls, fetches no additional source, and never executes repository code.
+
+Each dimension starts at 100. A HIGH, MEDIUM, or LOW finding subtracts 12, 6, or 2 points, multiplied by confidence HIGH 1.0, MEDIUM 0.6, or LOW 0.3. Deductions are capped at 60 per dimension. Overall Health is the rounded mean of the four rounded dimension scores. Labels are Excellent (90+), Strong (80+), Good (70+), Needs Attention (60+), Weak (40+), and Critical (below 40). The dashboard shows coverage because missing cached source limits security, performance, and code-quality detection; a high score is not proof that a project is safe or fast.
+
 ### `POST /api/download`
 Streams the generated Markdown report as a downloadable `.md` file attachment.
 

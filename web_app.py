@@ -44,6 +44,7 @@ from execution_trace import default_trace_service
 from change_impact import ChangeImpactService
 from source_service import get_source_file
 from humanize.service import HumanizeService
+from project_health import ProjectHealthService
 from refactor_planner.service import RefactorPlannerService
 from patch_engine import PatchService
 from patch_engine.validator import readable_text, safe_target
@@ -55,6 +56,7 @@ from pathlib import Path
 
 default_impact_service = ChangeImpactService()
 default_humanize_service = HumanizeService(default_impact_service)
+default_project_health_service = ProjectHealthService(default_humanize_service)
 default_refactor_service = RefactorPlannerService(default_impact_service, default_trace_service)
 _local_patch_service = None
 _local_validator_service = None
@@ -515,6 +517,31 @@ def health_check():
             "rate_remaining": auth_info["remaining"],
         }
     })
+
+
+@app.route("/api/health/project", methods=["POST", "OPTIONS"])
+@limiter.limit(get_humanize_limit)
+def api_project_health():
+    """Aggregate cached, deterministic repository evidence without fetching or executing code."""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON object is required."}), 400
+    try:
+        owner, repo = validate_github_url(data.get("repo_url") or data.get("url") or "")
+        model = get_cached_repository_model(owner, repo) or data.get("repository_model")
+        if not isinstance(model, dict):
+            raise ValueError("Analyze a repository before requesting Project Health.")
+        metadata = model.get("metadata") or {}
+        if not isinstance(metadata, dict) or (metadata and (
+            str(metadata.get("owner", owner)).lower() != owner.lower() or
+            str(metadata.get("repo", repo)).lower() != repo.lower()
+        )):
+            raise ValueError("Repository model does not match the requested repository.")
+        return jsonify(default_project_health_service.analyze(owner, repo, model))
+    except (ValueError, TypeError) as error:
+        return jsonify({"success": False, "error": str(error)}), 400
 
 
 @app.route("/api/analyze", methods=["POST", "OPTIONS"])
