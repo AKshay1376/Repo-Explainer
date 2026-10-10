@@ -34,6 +34,8 @@ import type { SourceLocation } from "../types/source"
 import type { PlanTrigger } from "../types/refactor"
 import type { PatchTrigger } from "../types/patch"
 import type { DocumentTarget } from "../types/documentation"
+import { localApi } from "../hooks/useProjects"
+import { useSessionState } from "../hooks/useSessionState"
 
 import { sourceForStep, sourceForImpact } from "../lib/sourceNavigation"
 
@@ -56,7 +58,12 @@ interface DashboardProps {
   data: AnalysisData
   onReset: () => void
   repoUrl: string
+  projectId?: string | null
+  initialTab?: string | null
+  initialFileOverride?: string | null
 }
+
+type DashboardTab = "project" | "docs" | "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation"
 
 const RefactorPlannerView = React.lazy(() => import("./RefactorPlanner/RefactorPlannerView").then((module) => ({ default: module.RefactorPlannerView })))
 const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((module) => ({ default: module.HumanizeView })))
@@ -66,11 +73,15 @@ const ValidationView = React.lazy(() => import("./Validation/ValidationView").th
 const ProjectHealthView = React.lazy(() => import("./ProjectHealth/ProjectHealthView").then((module) => ({ default: module.ProjectHealthView })))
 const GitHistoryView = React.lazy(() => import("./GitHistory/GitHistoryView").then((module) => ({ default: module.GitHistoryView })))
 const DocumentationView = React.lazy(() => import("./Documentation/DocumentationView").then((module) => ({ default: module.DocumentationView })))
+const ProjectDashboard = React.lazy(() => import("./Projects/ProjectDashboard").then((module) => ({ default: module.ProjectDashboard })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
   onReset,
   repoUrl,
+  projectId,
+  initialTab,
+  initialFileOverride,
 }) => {
   const [copied, setCopied] = useState(false)
   const [isStructureOpen, setIsStructureOpen] = useState(false)
@@ -79,6 +90,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Initial file selection: first entrypoint, or first key file, or first parsed file
   const initialFile = React.useMemo(() => {
+    if (initialFileOverride && repository_model?.files?.[initialFileOverride]) return initialFileOverride
     if (repository_model?.entry_points && repository_model.entry_points.length > 0) {
       return repository_model.entry_points[0].path
     }
@@ -87,24 +99,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     const all = Object.keys(repository_model?.files || {})
     return all.length ? all[0] : null
-  }, [repository_model, key_files])
+  }, [repository_model, key_files, initialFileOverride])
 
   const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
   const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
   const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<"docs" | "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation">(
-    repository_model ? "health" : "report"
+  const [activeTab, setActiveTab] = useState<DashboardTab>(
+    initialTab ? initialTab as DashboardTab : projectId ? "project" : repository_model ? "health" : "report"
   )
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([repository_model ? "health" : "report"]))
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([initialTab || (projectId ? "project" : repository_model ? "health" : "report")]))
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
-  const navigateTab = React.useCallback((tab: "docs" | "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation") => {
+  const navigateTab = React.useCallback((tab: DashboardTab) => {
     setVisitedTabs((previous) => new Set(previous).add(tab))
     setActiveTab(tab)
   }, [])
   const openSource = React.useCallback((location: SourceLocation) => {
     setSourceLocation({ ...location, requestId: Date.now() })
+    if (projectId) void localApi(`/projects/${projectId}/recent`, "POST", { type: "file", target: location.path, view: "source" }).catch(() => undefined)
     navigateTab("source")
-  }, [navigateTab])
+  }, [navigateTab, projectId])
   const [historyTarget, setHistoryTarget] = useState<{ path: string; requestId: number } | null>(null)
   const openHistory = React.useCallback((path: string) => {
     setHistoryTarget({ path, requestId: Date.now() })
@@ -141,12 +154,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleSelectFile = (path: string, pushHistory = true) => {
     setSelectedFile(path)
+    if (projectId) void localApi(`/projects/${projectId}/recent`, "POST", { type: "file", target: path, view: "explorer" }).catch(() => undefined)
     if (pushHistory) {
       const nextHistory = history.slice(0, historyIndex + 1).concat(path)
       setHistory(nextHistory)
       setHistoryIndex(nextHistory.length - 1)
     }
   }
+  const revision = repository_model?.metadata?.latest_commit_sha || null
+  const restore = React.useCallback((view: string | null, file: string | null) => {
+    if (initialTab) return
+    if (file && repository_model?.files?.[file]) setSelectedFile(file)
+    if (view) navigateTab(view as DashboardTab)
+  }, [repository_model, navigateTab, initialTab])
+  const { stale: staleSession } = useSessionState(projectId || null, revision, activeTab, selectedFile, restore)
 
   const handleAskAboutFile = (filePath: string) => {
     setAskScope({ file: filePath })
@@ -452,8 +473,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* 3. Section Switcher Tabs */}
+      {staleSession && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Repository changed since last session. Analyze latest or continue with the current snapshot. Patch and refactor contexts were not restored.</p>}
       <div className="flex items-center justify-between border-b border-line pb-4">
         <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-surface-subtle/80 border border-line">
+          {projectId && <button onClick={() => navigateTab("project")} className={`rounded-xl px-4 py-2 text-xs font-semibold ${activeTab === "project" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>Project</button>}
           {repository_model && <button onClick={() => navigateTab("health")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "health" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
             <ZapIcon className="h-4 w-4 text-brand" /><span>Project Health</span>
@@ -560,9 +583,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Views stay mounted after first visit so conversations and graph position survive navigation. */}
+      {projectId && visitedTabs.has("project") && <div hidden={activeTab !== "project"}><React.Suspense fallback={<p className="p-8 text-sm">Loading project…</p>}><ProjectDashboard projectId={projectId} currentSha={revision} onNavigate={view => navigateTab(view as DashboardTab)} onOpenFile={path => { handleSelectFile(path); navigateTab("explorer") }} onHome={onReset} /></React.Suspense></div>}
       {repository_model && visitedTabs.has("docs") && <div hidden={activeTab !== "docs"}>
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Documentation…</p>}>
-          <DocumentationView repoUrl={repoUrl} model={repository_model} target={documentTarget} onOpenSource={openSource} onCreatePatch={openPatch} />
+          <DocumentationView repoUrl={repoUrl} model={repository_model} target={documentTarget} onOpenSource={openSource} onCreatePatch={openPatch} projectId={projectId} />
         </React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("history") && <div hidden={activeTab !== "history"}>
@@ -641,6 +665,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {planTrigger && <button onClick={() => openDocumentation({ type: "REFACTOR_NOTES", scope: planTrigger.target, options: { plan_type: planTrigger.planType } })} className="mb-3 text-xs font-semibold text-brand">Export Refactor Plan</button>}
         <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading planner…</p>}>
           <RefactorPlannerView repoUrl={repoUrl} model={repository_model} trigger={planTrigger}
+            projectId={projectId}
             onOpenSource={openSource} onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
             onOpenGraph={handleShowInGraphFromAsk} onCreatePatch={openPatch}
             onDocumentPlan={(target, planType) => openDocumentation({ type: "REFACTOR_NOTES", scope: target, options: { plan_type: planType } })} />

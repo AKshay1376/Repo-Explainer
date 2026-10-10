@@ -7,6 +7,7 @@ import { useRefactorPlanner } from "../../hooks/useRefactorPlanner"
 import { PlanStepCard } from "./PlanStepCard"
 import { PlanGraph } from "./PlanGraph"
 import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
+import { localApi } from "../../hooks/useProjects"
 
 interface Props {
   repoUrl: string
@@ -17,16 +18,18 @@ interface Props {
   onOpenGraph: (path: string) => void
   onCreatePatch?: (trigger: PatchTrigger) => void
   onDocumentPlan?: (target: string, planType: PlanType) => void
+  projectId?: string | null
 }
 
 const label = (type: PlanType) => type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 
-export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch, onDocumentPlan }) => {
+export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch, onDocumentPlan, projectId }) => {
   const [planType, setPlanType] = useState<PlanType>(trigger?.planType || "rename_symbol")
   const [target, setTarget] = useState(trigger?.target || "")
   const [symbol, setSymbol] = useState(String(trigger?.options?.symbol || ""))
   const [destination, setDestination] = useState(trigger?.destination || "")
   const [aiConsent, setAiConsent] = useState(false)
+  const [saveMessage, setSaveMessage] = useState("")
   const [plannedTrigger, setPlannedTrigger] = useState<PlanTrigger | null>(null)
   const { planResult, validationResult, explanation, loading, error, generate, validate, explain } = useRefactorPlanner(repoUrl, model)
   const requestPlan = (candidate: PlanTrigger) => { setPlannedTrigger(candidate); void generate(candidate) }
@@ -74,6 +77,7 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
       <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-base font-semibold text-ink">{plan.summary}</h3>
         {onDocumentPlan && <button onClick={() => onDocumentPlan(plan.target, plan.plan_type)} className="text-xs font-semibold text-brand">Export Refactor Plan</button>}
+        {projectId && <button onClick={() => void localApi(`/projects/${projectId}/plans`, "POST", { target: plan.target, risk_level: plan.risk_level, repo_sha: plan.revision, steps: plan.steps }).then(() => setSaveMessage("Plan saved to this project.")).catch(cause => setSaveMessage(cause instanceof Error ? cause.message : "Save failed."))} className="ml-3 text-xs font-semibold text-brand">Save Plan</button>}{saveMessage && <p role="status" className="text-xs text-ink-secondary">{saveMessage}</p>}
         <p className="text-xs text-ink-secondary">{plan.risk_level} risk · {plan.confidence} confidence · {plan.estimated_scope.files} files · {plan.steps.length} ordered steps · revision {plan.revision.slice(0, 12)} · 0 LLM calls</p>
         {plan.risk_factors.map((item) => <p key={item} className="text-xs text-amber-700">Risk: {item}</p>)}
         {plan.warnings.map((item) => <p key={item} className="text-xs text-amber-700">{item}</p>)}

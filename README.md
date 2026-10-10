@@ -337,6 +337,16 @@ Endpoints: `POST /api/patch/generate`, `/api/patch/verified`, `/api/patch/valida
 
 ---
 
+## Saved Projects and Local History (Phase 17)
+
+Repo Explainer saves project metadata in `.repo-explainer/data/repo-explainer.db` by default. The directory is Git-ignored. Set `REPO_EXPLAINER_DB_PATH` to use another local SQLite path (useful for tests). The database uses WAL, short per-request connections, foreign keys, and versioned migrations. It is separate from the recomputable RepositoryModel, source, health, and Git history caches.
+
+Local mode needs no account or email. The Home screen shows recent projects, favorites, saved documentation, search, settings, data export/import, and archive controls. Each project has a dashboard for recent activity, compact analysis snapshots, recent files, bookmarks, saved documents, plans, and patch/validator metadata. Generated documents are saved only when **Save to Project** is selected. Refactor plans also have an explicit Save Plan action. Closing and reopening the browser or backend preserves durable state. Opening a saved dashboard works offline; source-dependent views require reanalysis because raw source caches are intentionally not stored in SQLite.
+
+Workspace restoration records navigation only. If the saved and current repository SHAs differ, the app shows a stale-session warning. Patch and refactor apply contexts are never restored; the existing Patch Engine remains responsible for rollback bytes and hash checks. Validator trust remains tied to its repository-specific profile and root. SQLite records compact result references, not authority to run commands or resume patches.
+
+The local-data API is restricted to loopback clients and local origins. Project CRUD uses `/api/projects`, `/api/projects/<id>`, and nested analyses, documents, bookmarks, recent files, activity, plans, and patch metadata endpoints. `/api/session`, `/api/settings`, `/api/profile`, `/api/storage`, and `/api/local-data/export` and `/import` manage the workspace. Delete Project requires an explicit confirmation and never deletes a checkout on disk. Exports contain bounded durable records, not source caches or rollback bytes. Imported patch and validator references are not activated as trust or rollback state. Account/cloud sync remains a future extension; no sign-in is required.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please follow these guidelines:

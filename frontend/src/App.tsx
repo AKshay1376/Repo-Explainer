@@ -6,16 +6,35 @@ import { LoadingState } from "./components/LoadingState"
 import { Dashboard, type AnalysisData } from "./components/Dashboard"
 import { LegalModal, type LegalDocType } from "./components/LegalModal"
 import { ShieldCheckIcon, TerminalIcon, GithubIcon, InstagramIcon } from "./components/ui/icons"
+import { localApi } from "./hooks/useProjects"
+import type { SavedProject } from "./types/persistence"
+
+const HomeView = React.lazy(() => import("./components/Home/HomeView").then(module => ({ default: module.HomeView })))
+const ProjectDashboard = React.lazy(() => import("./components/Projects/ProjectDashboard").then(module => ({ default: module.ProjectDashboard })))
 
 export const App: React.FC = () => {
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "saved" | "error">("idle")
   const [currentUrl, setCurrentUrl] = useState<string>("")
   const [data, setData] = useState<AnalysisData | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [legalDoc, setLegalDoc] = useState<LegalDocType>(null)
+  const [projectId, setProjectId] = useState<string | null>(null)
+  const [requestedTab, setRequestedTab] = useState<string | null>(null)
+  const [requestedFile, setRequestedFile] = useState<string | null>(null)
 
-  const handleAnalyze = async (url: string) => {
+  const handleOpenProject = (project: SavedProject) => {
+    void localApi(`/projects/${project.id}/open`, "POST", {}).catch(() => undefined)
+    setProjectId(project.id)
+    setCurrentUrl(project.repo_url)
+    setData(null)
+    setStatus("saved")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const handleAnalyze = async (url: string, tab?: string, file?: string) => {
     setCurrentUrl(url)
+    setRequestedTab(tab || null)
+    setRequestedFile(file || null)
     setErrorMessage(null)
     setStatus("loading")
 
@@ -43,6 +62,13 @@ export const App: React.FC = () => {
       }
 
       setData(result)
+      try {
+        const saved = await localApi<{ project: { id: string } }>("/projects", "POST", {
+          repo_url: url, name: result.info?.name, branch: result.info?.default_branch,
+          repo_sha: result.repository_model?.metadata?.latest_commit_sha || null,
+        })
+        setProjectId(saved.project.id)
+      } catch { setProjectId(null) }
       setStatus("success")
       // Smooth scroll to results
       window.scrollTo({ top: 0, behavior: "smooth" })
@@ -55,6 +81,9 @@ export const App: React.FC = () => {
   const handleReset = () => {
     setStatus("idle")
     setData(null)
+    setProjectId(null)
+    setRequestedTab(null)
+    setRequestedFile(null)
     setErrorMessage(null)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -66,6 +95,7 @@ export const App: React.FC = () => {
       <main className="flex-1">
         {status === "idle" && (
           <>
+            <React.Suspense fallback={<p className="p-8 text-sm">Loading saved projects…</p>}><HomeView onAnalyze={handleAnalyze} onOpenProject={handleOpenProject} /></React.Suspense>
             <Hero onAnalyze={handleAnalyze} isLoading={false} />
             <ProductStory onSelectSample={(sampleUrl) => handleAnalyze(sampleUrl)} />
           </>
@@ -92,8 +122,9 @@ export const App: React.FC = () => {
         )}
 
         {status === "success" && data && (
-          <Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} />
+          <Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} projectId={projectId} initialTab={requestedTab} initialFileOverride={requestedFile} />
         )}
+        {status === "saved" && projectId && <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><React.Suspense fallback={<p className="text-sm">Loading saved project…</p>}><ProjectDashboard projectId={projectId} currentSha={null} onNavigate={view => void handleAnalyze(currentUrl, view)} onOpenFile={path => void handleAnalyze(currentUrl, "explorer", path)} onHome={handleReset} /></React.Suspense></div>}
       </main>
 
       {/* Apple-style minimalist footer with orange brand accent */}

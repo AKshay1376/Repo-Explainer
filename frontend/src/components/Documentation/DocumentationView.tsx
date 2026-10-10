@@ -4,14 +4,15 @@ import type { SourceLocation } from "../../types/source"
 import type { PatchTrigger } from "../../types/patch"
 import { DOC_TYPES, type DocSection, type DocType, type DocumentTarget } from "../../types/documentation"
 import { useDocumentation } from "../../hooks/useDocumentation"
+import { localApi } from "../../hooks/useProjects"
 
-interface Props { repoUrl: string; model: RepositoryModel; target?: DocumentTarget | null; onOpenSource: (location: SourceLocation) => void; onCreatePatch: (trigger: PatchTrigger) => void }
+interface Props { repoUrl: string; model: RepositoryModel; target?: DocumentTarget | null; onOpenSource: (location: SourceLocation) => void; onCreatePatch: (trigger: PatchTrigger) => void; projectId?: string | null }
 const label = (type: string) => type.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
 const localMarkdown = (title: string, revision: string, sections: DocSection[]) => `# ${title}\n\nRevision: ${revision}\n\n` + sections.map(part => `## ${part.title}\n\n` +
   ([...part.facts.map(value => `- **FACT:** ${value}`), ...part.inferences.map(value => `- **INFERENCE:** ${value}`), ...part.unknowns.map(value => `- **UNKNOWN:** ${value}`), ...part.citations.map(ref => `- Source: ${ref.file}${ref.start_line ? `:${ref.start_line}` : ""}`)].join("\n")) +
   (part.diagram ? `\n\n\`\`\`mermaid\n${part.diagram}\n\`\`\`` : "")).join("\n\n")
 
-export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onOpenSource, onCreatePatch }) => {
+export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onOpenSource, onCreatePatch, projectId }) => {
   const [docType, setDocType] = useState<DocType>(target?.type || "PROJECT_OVERVIEW")
   const [scope, setScope] = useState(target?.scope || "")
   const [period, setPeriod] = useState("latest")
@@ -20,6 +21,7 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onO
   const [activeTarget, setActiveTarget] = useState<DocumentTarget | null>(null)
   const [aiPreview, setAiPreview] = useState("")
   const [actionError, setActionError] = useState("")
+  const [saved, setSaved] = useState("")
   const { document, currentReadme, readmeDraft, readmePatchReady, loading, error, generate, regenerateSection, download, request } = useDocumentation(repoUrl, model)
   const run = (candidate: DocumentTarget) => { setActiveTarget(candidate); setAiPreview(""); void generate(candidate) }
   useEffect(() => { if (target) { setDocType(target.type); setScope(target.scope || ""); run(target) } }, [target?.requestId])
@@ -29,6 +31,11 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onO
     setActionError(""); try { await action() } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Action failed.") }
   }
   const copy = async (text: string) => guarded(async () => navigator.clipboard.writeText(text))
+  const save = () => guarded(async () => {
+    if (!document || !projectId) return
+    await localApi(`/projects/${projectId}/documents`, "POST", { document_id: document.id, format: "markdown" })
+    setSaved("Saved to this project. Open it from the Project tab after a restart.")
+  })
   const polish = (sectionId: string) => guarded(async () => {
     if (!document || !window.confirm("Send this generated section's evidence to AI for a preview-only writing suggestion?")) return
     const result = await request<{ polished_preview: string }>("ai-polish", { document_id: document.id, section_id: sectionId, confirm_ai: true })
@@ -60,7 +67,7 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onO
       <nav aria-label="Documentation contents" className="self-start rounded-2xl border border-line bg-surface p-4 lg:sticky lg:top-4"><h3 className="font-semibold text-ink">Contents</h3>{document.sections.map(part => <a key={part.id} href={`#doc-${part.id}`} className="mt-2 block text-xs text-brand">{part.title}</a>)}</nav>
       <div className="space-y-4">
         <div className="rounded-2xl border border-line bg-surface p-5"><h3 className="text-lg font-bold text-ink">{document.title}</h3><p className="text-xs text-ink-secondary">Revision {document.repo_revision.slice(0, 10)} · {document.confidence} confidence · {document.cached ? "cached" : "generated"} · {document.llm_calls} AI calls</p>
-          <div className="mt-3 flex flex-wrap gap-2">{(["markdown", "html", "json"] as const).map(format => <button key={format} onClick={() => void guarded(() => download(format))} className="rounded border border-line px-3 py-1 text-xs text-brand">Download {format === "markdown" ? ".md" : format === "html" ? ".html" : ".json"}</button>)}</div>
+          <div className="mt-3 flex flex-wrap gap-2">{(["markdown", "html", "json"] as const).map(format => <button key={format} onClick={() => void guarded(() => download(format))} className="rounded border border-line px-3 py-1 text-xs text-brand">Download {format === "markdown" ? ".md" : format === "html" ? ".html" : ".json"}</button>)}{projectId && <button onClick={save} className="rounded border border-line px-3 py-1 text-xs text-brand">Save to Project</button>}</div>{saved && <p role="status" className="mt-2 text-xs text-emerald-700">{saved}</p>}
           {document.warnings.map(item => <p key={item} className="mt-2 text-xs text-amber-700">{item}</p>)}
         </div>
           {document.type === "README_DRAFT" && <div className="grid gap-3 md:grid-cols-2"><div className="rounded-xl border border-line bg-surface p-4"><h4 className="font-semibold">Current README</h4><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-xs">{currentReadme || "Current README unavailable in source cache."}</pre></div><div className="rounded-xl border border-line bg-surface p-4"><h4 className="font-semibold">Generated draft</h4><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-xs">{readmeDraft}</pre></div><div className="flex gap-2"><button onClick={() => readmeDraft && void copy(readmeDraft)} className="text-xs text-brand">Copy draft</button>{readmePatchReady && currentReadme && readmeDraft && readmeDraft.length <= 20_000 && <button onClick={patchReadme} className="text-xs text-brand">Create Patch preview</button>}</div></div>}

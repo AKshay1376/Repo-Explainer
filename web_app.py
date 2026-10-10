@@ -49,6 +49,8 @@ from git_history import GitHistoryService
 from git_history.repository import GitHistoryError
 from documentation import DocumentationService
 from documentation.models import TYPES
+from persistence import PersistenceService
+from persistence.api import create_blueprint
 from refactor_planner.service import RefactorPlannerService
 from patch_engine import PatchService
 from patch_engine.validator import readable_text, safe_target
@@ -68,6 +70,81 @@ _local_patch_service = None
 _local_validator_service = None
 app = Flask(__name__, static_folder=None)
 init_limiter(app)
+default_persistence_service = PersistenceService()
+app.register_blueprint(create_blueprint(default_persistence_service))
+
+
+def _remember_analysis(owner, repo, payload):
+    """Store only compact metadata; failed local storage cannot discard a completed analysis."""
+    try:
+        metadata = (payload.get("repository_model") or {}).get("metadata") or {}
+        revision = metadata.get("latest_commit_sha")
+        saved = default_persistence_service.save_project(f"{owner}/{repo}",
+            name=payload.get("info", {}).get("name") or repo,
+            branch=payload.get("info", {}).get("default_branch"), repo_sha=revision)
+        recent = default_persistence_service.analyses(saved["id"], 1)
+        if not recent or recent[0]["analysis_type"] != "repository_model" or recent[0]["repo_sha"] != revision:
+            default_persistence_service.add_analysis(saved["id"], "repository_model", repo_sha=revision,
+                summary="Repository analyzed", metrics={"file_count": len((payload.get("repository_model") or {}).get("files") or {})})
+    except (ValueError, OSError) as error:
+        logger.warning("Could not save local project metadata: %s", error)
+    except Exception:
+        logger.exception("Local project metadata storage failed")
+
+
+@app.after_request
+def _remember_compact_results(response):
+    """Mirror useful result metadata only; existing caches and patch stores remain authoritative."""
+    tracked = {"/api/health/project", "/api/humanize", "/api/refactor/plan", "/api/validators/run", "/api/validators/trust",
+               "/api/patch/generate", "/api/patch/verified", "/api/patch/apply", "/api/patch/rollback",
+               "/api/patch/accept", "/api/patch/reject"}
+    if request.path not in tracked or request.method != "POST" or response.status_code != 200:
+        return response
+    try:
+        incoming = request.get_json(silent=True) or {}
+        if not isinstance(incoming, dict):
+            return response
+        repo_url = incoming.get("repo_url") or incoming.get("url")
+        if not repo_url:
+            return response
+        project = default_persistence_service.find_project(repo_url)
+        payload = response.get_json(silent=True) or {}
+        if not project or not isinstance(payload, dict) or payload.get("success") is not True:
+            return response
+        project_id = project["id"]
+        revision = incoming.get("ref") or project.get("current_sha")
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+            revision = project.get("current_sha")
+        if request.path == "/api/health/project":
+            summary = payload.get("summary") or {}
+            default_persistence_service.add_analysis(project_id, "project_health", repo_sha=revision,
+                summary="Project Health report", metrics={"health_score": payload.get("overall_score", 0),
+                    "finding_count": summary.get("finding_count", 0)})
+        elif request.path == "/api/humanize" and incoming.get("audit_only") is True:
+            default_persistence_service.add_analysis(project_id, "humanize", repo_sha=revision,
+                summary="Humanize audit", metrics={"finding_count": sum((payload.get("category_counts") or {}).values())})
+        elif request.path == "/api/refactor/plan":
+            plan = payload.get("plan") or {}
+            default_persistence_service.add_analysis(project_id, "refactor_plan", repo_sha=revision,
+                summary=f"Refactor plan: {plan.get('plan_type', 'unknown')}")
+        elif request.path == "/api/validators/run":
+            states = [item.get("state") for item in payload.get("results", []) if isinstance(item, dict)]
+            default_persistence_service.record_validation(project_id, payload.get("profile") or {},
+                "PASSED" if states and all(state == "PASSED" for state in states) else "FAILED")
+        elif request.path == "/api/validators/trust":
+            profile = payload.get("profile") or {}
+            default_persistence_service.record_validation(project_id, profile,
+                "TRUST_METADATA:" + str(profile.get("trust_scope", "unknown"))[:30])
+        elif request.path.startswith("/api/patch/"):
+            patch_id = incoming.get("patch_id") or (payload.get("patch") or {}).get("id") or payload.get("id")
+            if patch_id:
+                history = _patch_context(incoming).history().get("patches") or []
+                metadata = next((item for item in history if item.get("id") == patch_id), None)
+                if metadata:
+                    default_persistence_service.record_patch(project_id, metadata, revision)
+    except Exception as error:
+        logger.warning("Could not save compact activity metadata: %s", error)
+    return response
 
 
 def _patch_context(data=None):
@@ -500,9 +577,10 @@ FALLBACK_HTML = """
 
 @app.after_request
 def add_cors_and_security_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    if request.blueprint != "local_persistence":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     return response
@@ -723,6 +801,7 @@ def api_analyze():
     cached_payload = get_cached_analysis(owner, repo)
     if cached_payload is not None:
         logger.info("Serving cached analysis for %s/%s", owner, repo)
+        _remember_analysis(owner, repo, cached_payload)
         return jsonify(cached_payload)
 
     try:
@@ -757,6 +836,8 @@ def api_analyze():
             set_cached_repository_model(owner, repo, result["repository_model"])
         if result.get("key_file_contents"):
             set_cached_file_contents(owner, repo, result["key_file_contents"])
+
+        _remember_analysis(owner, repo, payload)
 
         return jsonify(payload)
 

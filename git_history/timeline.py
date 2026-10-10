@@ -22,6 +22,8 @@ def log_commits(git, *, limit=DEFAULT_LIMIT, offset=0, path=None, since=None,
         if value is not None:
             if not isinstance(value, str) or not DATE.fullmatch(value):
                 raise GitHistoryError(f"Invalid {name} date.")
+            if len(value) == 10:
+                value += "T00:00:00" if name == "since" else "T23:59:59"
             args.append(f"--{name}={value}")
     if merge is True:
         args.append("--merges")
