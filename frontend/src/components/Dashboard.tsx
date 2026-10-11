@@ -335,7 +335,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <button
               onClick={handleCopy}
               className="inline-flex items-center gap-1.5 rounded-full apple-glass-control px-3.5 py-2 text-xs font-medium text-ink shadow-subtle transition-all cursor-pointer"
