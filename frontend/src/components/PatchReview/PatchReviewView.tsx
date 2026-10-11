@@ -10,6 +10,9 @@ import { PatchHistory } from "./PatchHistory"
 import { RollbackPanel } from "./RollbackPanel"
 import { canApplyPatch, hunkIds } from "../../lib/patchSelection"
 import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
+import { ConfirmDialog } from "../ui/AccessibleDialog"
+import { emitProductEvent } from "../../lib/productEvents"
+import { useToast } from "../ui/Toasts"
 
 const ValidationView = React.lazy(() => import("../Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
 
@@ -22,6 +25,7 @@ interface Props {
 }
 
 export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenImpact, onOpenSource }) => {
+  const toast = useToast()
   const { patch, historical, history, loading, error, validation, selectedDiff, postImpact, setValidation, setSelectedDiff, generate, generateGroup, generateVerified, generateAi, validate, apply, accept, reject, reanalyzeImpact, rollbackId, load, refreshHistory } = usePatchEngine(repoUrl, model)
   const [selected, setSelected] = useState<string[]>([])
   const [mode, setMode] = useState<"unified" | "side-by-side">("unified")
@@ -30,6 +34,8 @@ export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOp
   const [confirmApply, setConfirmApply] = useState(false)
   const [runProjectValidation, setRunProjectValidation] = useState(false)
   const [confirmConflict, setConfirmConflict] = useState(false)
+  const [confirmHighRiskApply, setConfirmHighRiskApply] = useState(false)
+  const [pendingRollbackId, setPendingRollbackId] = useState<string | null>(null)
   const [rollbackPaths, setRollbackPaths] = useState<string[]>([])
   const [manualPath, setManualPath] = useState("")
   const [start, setStart] = useState(1)
@@ -46,10 +52,11 @@ export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOp
   const [helperLine, setHelperLine] = useState(1)
 
   useEffect(() => { void refreshHistory() }, [refreshHistory])
-  useEffect(() => { if (trigger) { setManualPath(trigger.path); void generate(trigger) } }, [trigger?.requestId])
+  useEffect(() => { if (trigger) { setManualPath(trigger.path); emitProductEvent("patch_previewed"); void generate(trigger) } }, [trigger?.requestId])
   useEffect(() => {
-    if (patch) { setSelected(hunkIds(patch.files)); setRollbackPaths(patch.files.flatMap((file) => file.operation === "move" && file.destination_path ? [file.path, file.destination_path] : [file.path])); setConfirmApply(false); setHighRisk(false); setPublicApi(false) }
+    if (patch) { setSelected(hunkIds(patch.files)); setRollbackPaths(patch.files.flatMap((file) => file.operation === "move" && file.destination_path ? [file.path, file.destination_path] : [file.path])); setConfirmApply(false); setHighRisk(false); setPublicApi(false); toast("Patch preview ready for review.") }
   }, [patch?.id])
+  useEffect(() => { if (validation) toast("Patch validation completed.") }, [validation])
   useEffect(() => { if (patch) setRollbackPaths(patch.files.flatMap((file) => file.operation === "move" && file.destination_path ? [file.path, file.destination_path] : [file.path]).filter((path) => !patch.rolled_back_files?.includes(path))) }, [patch?.rolled_back_files?.join("|")])
   useEffect(() => { if (historical) setRollbackPaths(historical.files.filter((path) => !historical.rolled_back_files?.includes(path))) }, [historical?.id, historical?.rolled_back_files?.join("|")])
   const changeSelection = (ids: string[]) => { setSelected(ids); setValidation(null); setSelectedDiff(null); setConfirmApply(false) }
@@ -99,17 +106,22 @@ export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOp
       <div className="flex flex-wrap items-center gap-3"><button disabled={loading || !selected.length || patch.status !== "ready"} onClick={() => void validate(selected)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand disabled:opacity-40">Validate selection</button>
         <label className="flex items-center gap-2 text-xs text-ink-secondary"><input type="checkbox" checked={confirmApply} onChange={(event) => setConfirmApply(event.target.checked)} /> I reviewed this diff and approve applying the selected changes.</label>
         <label className="flex items-center gap-2 text-xs text-ink-secondary"><input type="checkbox" checked={runProjectValidation} onChange={(event) => setRunProjectValidation(event.target.checked)} /> Run trusted validators automatically after apply (off by default).</label>
-        <button disabled={!canApply || loading} onClick={() => void apply(selected, highRisk, publicApi, runProjectValidation)} className="rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">Apply selected patch</button></div>
+        <button disabled={!canApply || loading} onClick={() => {
+          if (patch.risk_level.toUpperCase() === "HIGH" || highRisk) setConfirmHighRiskApply(true)
+          else { emitProductEvent("patch_applied"); void apply(selected, highRisk, publicApi, runProjectValidation) }
+        }} className={`rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 ${patch.risk_level.toUpperCase() === "HIGH" || highRisk ? "bg-rose-700 hover:bg-rose-800" : "bg-brand hover:bg-brand-hover"}`}>{patch.risk_level.toUpperCase() === "HIGH" || highRisk ? "Review high-risk apply" : "Apply selected patch"}</button></div>
+      {confirmHighRiskApply && <ConfirmDialog title="Apply high-risk patch?" consequence={`This will modify ${patch.files.length} file${patch.files.length === 1 ? "" : "s"}. Review the selected hunks, risk factors, and validation result before continuing. Rollback depends on the recorded snapshots.`} confirmLabel="Apply high-risk patch" onClose={() => setConfirmHighRiskApply(false)} onConfirm={() => { setConfirmHighRiskApply(false); emitProductEvent("patch_applied"); void apply(selected, highRisk, publicApi, runProjectValidation) }} />}
       {validation && <ValidationResults validation={validation} />}
       {(patch.status === "ready" || patch.status === "stale") && <button disabled={loading} onClick={() => void reject(patch.id)} className="rounded-lg border border-line px-3 py-2 text-xs font-semibold text-ink-secondary">Reject preview</button>}
       {patch.status === "applied" && <button disabled={loading} onClick={() => void accept(patch.id)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand">Accept applied patch</button>}
-      {patch.rollback_available && <RollbackPanel patchId={patch.id} files={patch.files.flatMap((file) => file.operation === "move" && file.destination_path ? [file.path, file.destination_path] : [file.path])} rolledBackFiles={patch.rolled_back_files} selected={rollbackPaths} onSelected={setRollbackPaths} confirmConflict={confirmConflict} onConflict={setConfirmConflict} onRollback={() => void rollbackId(patch.id, rollbackPaths, confirmConflict)} loading={loading} />}
+      {patch.rollback_available && <RollbackPanel patchId={patch.id} files={patch.files.flatMap((file) => file.operation === "move" && file.destination_path ? [file.path, file.destination_path] : [file.path])} rolledBackFiles={patch.rolled_back_files} selected={rollbackPaths} onSelected={setRollbackPaths} confirmConflict={confirmConflict} onConflict={setConfirmConflict} onRollback={() => setPendingRollbackId(patch.id)} loading={loading} />}
     </div>}
     {patch && <React.Suspense fallback={<p className="text-xs text-ink-secondary">Loading validation profile…</p>}><ValidationView repoUrl={repoUrl} patchId={patch.id} paths={patch.files.map((file) => file.path)} compact /></React.Suspense>}
     {historical && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3 text-xs text-ink-secondary"><h3 className="font-semibold text-ink">Saved patch {historical.id.slice(0, 12)} · {historical.status}</h3><p>The preview expired after the server restarted. Regenerate it before applying. Byte snapshots remain available for rollback.</p>
       {historical.status === "applied" && <button disabled={loading} onClick={() => void accept(historical.id)} className="rounded-lg border border-brand-border bg-brand-surface px-3 py-2 font-semibold text-brand">Accept saved patch</button>}
-      {historical.rollback_available && <RollbackPanel saved patchId={historical.id} files={historical.files} rolledBackFiles={historical.rolled_back_files} selected={rollbackPaths} onSelected={setRollbackPaths} confirmConflict={confirmConflict} onConflict={setConfirmConflict} onRollback={() => void rollbackId(historical.id, rollbackPaths, confirmConflict)} loading={loading} />}
+      {historical.rollback_available && <RollbackPanel saved patchId={historical.id} files={historical.files} rolledBackFiles={historical.rolled_back_files} selected={rollbackPaths} onSelected={setRollbackPaths} confirmConflict={confirmConflict} onConflict={setConfirmConflict} onRollback={() => setPendingRollbackId(historical.id)} loading={loading} />}
     </div>}
+    {pendingRollbackId && <ConfirmDialog title="Restore original file bytes?" consequence={`Rollback will restore ${rollbackPaths.length} selected file${rollbackPaths.length === 1 ? "" : "s"} from patch ${pendingRollbackId.slice(0, 12)}.${confirmConflict ? " Changed files may be overwritten because conflict approval is enabled." : " Changed files will be protected from overwrite."}`} confirmLabel="Rollback selected files" onClose={() => setPendingRollbackId(null)} onConfirm={() => { const id = pendingRollbackId; setPendingRollbackId(null); void rollbackId(id, rollbackPaths, confirmConflict) }} />}
     <PatchHistory history={history} onOpen={(id) => void load(id)} />
   </section>
 }

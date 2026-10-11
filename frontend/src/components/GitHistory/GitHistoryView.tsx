@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
 import type { CommitDetail, CoChangePair, EvolutionResponse, FileHistory, GitCommit, HistoryComparison, HistoryTimeline, HotspotResponse } from "../../types/gitHistory"
@@ -11,7 +11,8 @@ const sections: Section[] = ["Timeline", "File", "Hotspots", "Co-change", "Evolu
 interface Props {
   repoUrl: string
   model: RepositoryModel
-  target?: { path: string; requestId: number } | null
+  target?: { path?: string; commit?: string | null; requestId: number } | null
+  onSelectCommit?: (sha: string) => void
   onOpenSource: (location: SourceLocation) => void
   onAnalyzeImpact: (path: string) => void
   onHumanize: (path: string) => void
@@ -21,7 +22,7 @@ interface Props {
 const date = (value?: string) => value ? new Date(value).toLocaleString() : "Unknown date"
 const short = (sha?: string | null) => sha?.slice(0, 8) || "—"
 
-export const GitHistoryView: React.FC<Props> = ({ repoUrl, model, target, onOpenSource, onAnalyzeImpact, onHumanize, onCreatePlan }) => {
+export const GitHistoryView: React.FC<Props> = ({ repoUrl, model, target, onSelectCommit, onOpenSource, onAnalyzeImpact, onHumanize, onCreatePlan }) => {
   const { status, error: statusError, request } = useGitHistory(repoUrl)
   const [section, setSection] = useState<Section>("Timeline")
   const [loading, setLoading] = useState(false)
@@ -42,6 +43,7 @@ export const GitHistoryView: React.FC<Props> = ({ repoUrl, model, target, onOpen
   const [branch, setBranch] = useState("")
   const [before, setBefore] = useState("")
   const [after, setAfter] = useState("")
+  const lastCommit = useRef("")
 
   const run = async (action: () => Promise<void>) => {
     setLoading(true); setError("")
@@ -66,7 +68,9 @@ export const GitHistoryView: React.FC<Props> = ({ repoUrl, model, target, onOpen
     setCochange(result.pairs)
   })
   const loadEvolution = () => void run(async () => setEvolution(await request<EvolutionResponse>("evolution")))
-  const openCommit = (sha: string) => void run(async () => {
+  const openCommit = (sha: string, updateLink = true) => void run(async () => {
+    lastCommit.current = sha
+    if (updateLink) onSelectCommit?.(sha)
     const result = await request<CommitDetail>("commit", { sha, repository_model: model })
     setDetail(result); setAfter(sha); setBefore(result.commit.parents[0] || "")
   })
@@ -76,7 +80,8 @@ export const GitHistoryView: React.FC<Props> = ({ repoUrl, model, target, onOpen
   })
 
   useEffect(() => { if (status?.available) loadTimeline(0) }, [status?.head, status?.available])
-  useEffect(() => { if (target?.path && status?.available) loadFile(target.path) }, [target?.requestId, status?.available])
+  useEffect(() => { if (target?.path && status?.available) loadFile(target.path) }, [target?.path, target?.requestId, status?.available])
+  useEffect(() => { if (target?.commit && status?.available && target.commit !== lastCommit.current) openCommit(target.commit, false) }, [target?.commit, status?.available])
 
   const choose = (name: Section) => {
     setSection(name)

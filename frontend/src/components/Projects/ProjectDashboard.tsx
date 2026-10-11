@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { localApi } from "../../hooks/useProjects"
 import type { AnalysisSnapshot, SavedDocument, SavedProject } from "../../types/persistence"
+import { ConfirmDialog } from "../ui/AccessibleDialog"
 
 interface Props { projectId: string; currentSha: string | null; onNavigate: (view: string) => void; onOpenFile: (path: string) => void; onHome: () => void }
 
@@ -13,6 +14,7 @@ export const ProjectDashboard: React.FC<Props> = ({ projectId, currentSha, onNav
   const [bookmarkPath, setBookmarkPath] = useState("")
   const [bookmarkType, setBookmarkType] = useState("file")
   const [message, setMessage] = useState("")
+  const [confirmation, setConfirmation] = useState<{ title: string; consequence: string; label: string; run: () => Promise<void> } | null>(null)
   const refresh = useCallback(async () => {
     try {
       const [detail, history] = await Promise.all([
@@ -39,8 +41,8 @@ export const ProjectDashboard: React.FC<Props> = ({ projectId, currentSha, onNav
     catch (cause) { setMessage(cause instanceof Error ? cause.message : "Document unavailable.") }
   }
   const removeDocument = async (id: string) => {
-    if (!window.confirm("Delete this saved documentation snapshot?")) return
-    await localApi(`/projects/${projectId}/documents/${id}`, "DELETE"); setSavedDoc(null); await refresh()
+    setConfirmation({ title: "Delete documentation snapshot?", consequence: "This saved document will be removed. The repository is unaffected.", label: "Delete document",
+      run: async () => { await localApi(`/projects/${projectId}/documents/${id}`, "DELETE"); setSavedDoc(null); await refresh() } })
   }
   const duplicateDocument = async (id: string) => { await localApi(`/projects/${projectId}/documents/${id}/duplicate`, "POST", {}); await refresh() }
   const bookmark = async () => {
@@ -67,8 +69,9 @@ export const ProjectDashboard: React.FC<Props> = ({ projectId, currentSha, onNav
       <div className="rounded-2xl border border-line bg-surface p-4"><h3 className="font-semibold">Recent patches and validation</h3>{project.recent_patches?.map(item => <p key={item.id} className="mt-2 text-xs">{item.id.slice(0, 10)} · {item.status} · {item.risk}</p>)}<p className="mt-2 text-xs text-ink-secondary">Patch rollback stays in the existing Patch Engine.</p></div></div>
     {!!project.saved_plans?.length && <div className="rounded-2xl border border-line bg-surface p-4"><h3 className="font-semibold">Saved refactor plans</h3>{project.saved_plans.map(item => <p key={item.id} className="mt-2 text-xs">{item.scope} · {item.risk} risk · {item.steps.length} steps {currentSha && item.repo_sha !== currentSha ? "· May be stale; regenerate before applying" : ""}</p>)}</div>}
     <details className="rounded-2xl border border-line bg-surface p-4"><summary className="cursor-pointer font-semibold">Project management</summary><div className="mt-3 space-y-3 text-xs"><div className="flex gap-2"><input aria-label="Relink repository path" value={localPath} onChange={event => setLocalPath(event.target.value)} placeholder="Local repository path" className="min-w-0 flex-1 rounded border border-line p-2" /><button onClick={() => void update({ local_path: localPath })} className="text-brand">Relink Repository</button></div>
-      <button onClick={() => void update({ favorite: !project.favorite })} className="mr-4 text-brand">{project.favorite ? "Remove favorite" : "Favorite project"}</button><button onClick={() => void update({ archived: true }).then(onHome)} className="mr-4 text-brand">Archive project</button>
-      <button onClick={() => { if (window.confirm("Delete saved project data? The repository on disk will stay untouched.")) void localApi(`/projects/${projectId}`, "DELETE", { confirm_delete: true }).then(onHome) }} className="text-rose-600">Delete saved project data</button><p>Deleting this record never deletes the repository on disk.</p></div></details>
+      <button onClick={() => void update({ favorite: !project.favorite })} className="mr-4 text-brand">{project.favorite ? "Remove favorite" : "Favorite project"}</button><button onClick={() => setConfirmation({ title: "Archive project?", consequence: "The saved project moves to archived projects. Its repository and saved data remain available.", label: "Archive project", run: async () => { await update({ archived: true }); onHome() } })} className="mr-4 text-brand">Archive project</button>
+      <button onClick={() => setConfirmation({ title: "Delete saved project data?", consequence: "Saved project records and documents will be removed. The repository on disk stays untouched.", label: "Delete project data", run: async () => { await localApi(`/projects/${projectId}`, "DELETE", { confirm_delete: true }); onHome() } })} className="text-rose-600">Delete saved project data</button><p>Deleting this record never deletes the repository on disk.</p></div></details>
     {message && <p role="alert" className="text-xs text-rose-600">{message}</p>}
+    {confirmation && <ConfirmDialog title={confirmation.title} consequence={confirmation.consequence} confirmLabel={confirmation.label} onClose={() => setConfirmation(null)} onConfirm={() => { const action = confirmation.run; setConfirmation(null); void action().catch(cause => setMessage(cause instanceof Error ? cause.message : "Action failed.")) }} />}
   </section>
 }

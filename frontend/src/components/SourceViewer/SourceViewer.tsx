@@ -109,7 +109,7 @@ export const SourceViewer: React.FC<SourceViewerProps> = ({ repoUrl, model, loca
   }
 
   return <section className="rounded-3xl border border-line bg-surface shadow-card overflow-hidden" aria-label="Source code viewer">
-    <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-line bg-surface p-4">
       <h2 className="mr-auto text-sm font-semibold text-ink">Source Code Viewer</h2>
       {path && file && !file.is_sensitive && onViewHistory && <button type="button" onClick={() => onViewHistory(path)} className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-brand">View History</button>}
       {path && file && !file.is_sensitive && !historical && onDocument && <button type="button" onClick={() => onDocument(path)} className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-brand">Document File</button>}

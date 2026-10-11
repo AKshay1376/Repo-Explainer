@@ -22,10 +22,6 @@ import {
 import { ReportView } from "./ReportView"
 import { RepositoryExplorer } from "./RepositoryExplorer"
 import { FileInspector } from "./FileInspector"
-import { ArchitectureGraph } from "./ArchitectureGraph/ArchitectureGraph"
-import { AskRepo } from "./AskRepo/AskRepo"
-import { ExecutionFlowView } from "./ExecutionFlow/ExecutionFlowView"
-import { ChangeImpactView } from "./ChangeImpact/ChangeImpactView"
 import type { RepositoryModel } from "../types/repository"
 import type { AskRepoScope } from "../types/qa"
 import type { TraceTrigger, ExecutionFlow } from "../types/trace"
@@ -37,6 +33,13 @@ import type { DocumentTarget } from "../types/documentation"
 import { localApi } from "../hooks/useProjects"
 import { useSessionState } from "../hooks/useSessionState"
 import { tabAvailable } from "../lib/deployment"
+import { WorkspaceShell } from "./WorkspaceShell"
+import { availableViews, type WorkspaceView } from "../lib/workspaceNavigation"
+import { useWorkspaceNavigation } from "../hooks/useWorkspaceNavigation"
+import { ErrorBoundary } from "./ErrorBoundary"
+import { ViewSkeleton } from "./ui/ViewSkeleton"
+import { emitProductEvent } from "../lib/productEvents"
+import { useToast } from "./ui/Toasts"
 
 import { sourceForStep, sourceForImpact } from "../lib/sourceNavigation"
 
@@ -63,9 +66,10 @@ interface DashboardProps {
   initialTab?: string | null
   initialFileOverride?: string | null
   capabilities?: Record<string, boolean>
+  onSettings?: () => void
 }
 
-type DashboardTab = "project" | "docs" | "health" | "history" | "explorer" | "graph" | "ask" | "flow" | "impact" | "report" | "source" | "humanize" | "refactor" | "patch" | "validation"
+type DashboardTab = WorkspaceView
 
 const RefactorPlannerView = React.lazy(() => import("./RefactorPlanner/RefactorPlannerView").then((module) => ({ default: module.RefactorPlannerView })))
 const HumanizeView = React.lazy(() => import("./Humanize/HumanizeView").then((module) => ({ default: module.HumanizeView })))
@@ -76,6 +80,10 @@ const ProjectHealthView = React.lazy(() => import("./ProjectHealth/ProjectHealth
 const GitHistoryView = React.lazy(() => import("./GitHistory/GitHistoryView").then((module) => ({ default: module.GitHistoryView })))
 const DocumentationView = React.lazy(() => import("./Documentation/DocumentationView").then((module) => ({ default: module.DocumentationView })))
 const ProjectDashboard = React.lazy(() => import("./Projects/ProjectDashboard").then((module) => ({ default: module.ProjectDashboard })))
+const ArchitectureGraph = React.lazy(() => import("./ArchitectureGraph/ArchitectureGraph").then(module => ({ default: module.ArchitectureGraph })))
+const AskRepo = React.lazy(() => import("./AskRepo/AskRepo").then(module => ({ default: module.AskRepo })))
+const ExecutionFlowView = React.lazy(() => import("./ExecutionFlow/ExecutionFlowView").then(module => ({ default: module.ExecutionFlowView })))
+const ChangeImpactView = React.lazy(() => import("./ChangeImpact/ChangeImpactView").then(module => ({ default: module.ChangeImpactView })))
 
 export const Dashboard: React.FC<DashboardProps> = ({
   data,
@@ -85,11 +93,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   initialTab,
   initialFileOverride,
   capabilities,
+  onSettings = () => undefined,
 }) => {
   const localFeatures = capabilities?.local_filesystem !== false
   const patchAvailable = capabilities?.patch_apply !== false
   const validatorAvailable = capabilities?.validator_execution !== false
   const [copied, setCopied] = useState(false)
+  const toast = useToast()
   const [isStructureOpen, setIsStructureOpen] = useState(false)
 
   const { info, tech_stack, folder_summary, key_files, report, repository_model } = data
@@ -107,24 +117,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return all.length ? all[0] : null
   }, [repository_model, key_files, initialFileOverride])
 
-  const [selectedFile, setSelectedFile] = useState<string | null>(initialFile)
-  const [history, setHistory] = useState<string[]>(initialFile ? [initialFile] : [])
-  const [historyIndex, setHistoryIndex] = useState<number>(initialFile ? 0 : -1)
-  const [activeTab, setActiveTab] = useState<DashboardTab>(
-    initialTab ? initialTab as DashboardTab : projectId ? "project" : repository_model ? "health" : "report"
-  )
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([initialTab || (projectId ? "project" : repository_model ? "health" : "report")]))
+  const allowedViews = React.useMemo(() => availableViews(capabilities || {}, !!projectId, !!repository_model),
+    [capabilities, projectId, repository_model])
+  const fallback: DashboardTab = projectId ? "project" : repository_model ? "health" : "report"
+  const workspace = useWorkspaceNavigation(repository_model, projectId, allowedViews, fallback, initialFile, initialTab)
+  const activeTab = workspace.view
+  const selectedFile = workspace.file
+  React.useEffect(() => { emitProductEvent("view_opened", { view: activeTab }) }, [activeTab])
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([activeTab]))
+  React.useEffect(() => { setVisitedTabs(previous => new Set(previous).add(activeTab)) }, [activeTab])
   const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null)
   const navigateTab = React.useCallback((tab: DashboardTab) => {
     if (!tabAvailable(tab, capabilities)) return
     setVisitedTabs((previous) => new Set(previous).add(tab))
-    setActiveTab(tab)
-  }, [capabilities])
+    workspace.navigate({ view: tab })
+  }, [capabilities, workspace.navigate])
   const openSource = React.useCallback((location: SourceLocation) => {
     setSourceLocation({ ...location, requestId: Date.now() })
     if (projectId) void localApi(`/projects/${projectId}/recent`, "POST", { type: "file", target: location.path, view: "source" }).catch(() => undefined)
-    navigateTab("source")
-  }, [navigateTab, projectId])
+    workspace.navigate({ view: "source", file: location.path, line: location.startLine || null, endLine: location.endLine || null })
+  }, [workspace.navigate, projectId])
   const [historyTarget, setHistoryTarget] = useState<{ path: string; requestId: number } | null>(null)
   const openHistory = React.useCallback((path: string) => {
     setHistoryTarget({ path, requestId: Date.now() })
@@ -160,20 +172,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }
 
   const handleSelectFile = (path: string, pushHistory = true) => {
-    setSelectedFile(path)
+    workspace.navigate({ file: path, symbol: null, line: null, endLine: null }, !pushHistory)
     if (projectId) void localApi(`/projects/${projectId}/recent`, "POST", { type: "file", target: path, view: "explorer" }).catch(() => undefined)
-    if (pushHistory) {
-      const nextHistory = history.slice(0, historyIndex + 1).concat(path)
-      setHistory(nextHistory)
-      setHistoryIndex(nextHistory.length - 1)
-    }
   }
   const revision = repository_model?.metadata?.latest_commit_sha || null
   const restore = React.useCallback((view: string | null, file: string | null) => {
     if (initialTab) return
-    if (file && repository_model?.files?.[file]) setSelectedFile(file)
-    if (view) navigateTab(view as DashboardTab)
-  }, [repository_model, navigateTab, initialTab])
+    workspace.navigate({ ...(file && repository_model?.files?.[file] ? { file } : {}),
+      ...(view && allowedViews.includes(view as DashboardTab) ? { view: view as DashboardTab } : {}) }, true)
+  }, [repository_model, workspace.navigate, initialTab, allowedViews])
   const { stale: staleSession } = useSessionState(projectId || null, revision, activeTab, selectedFile, restore)
 
   const handleAskAboutFile = (filePath: string) => {
@@ -238,26 +245,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     navigateTab("ask")
   }
 
-  const handleNavigateBack = () => {
-    if (historyIndex > 0) {
-      const newIdx = historyIndex - 1
-      setHistoryIndex(newIdx)
-      setSelectedFile(history[newIdx])
-    }
-  }
-
-  const handleNavigateForward = () => {
-    if (historyIndex < history.length - 1) {
-      const newIdx = historyIndex + 1
-      setHistoryIndex(newIdx)
-      setSelectedFile(history[newIdx])
-    }
-  }
+  const handleNavigateBack = workspace.back
+  const handleNavigateForward = workspace.forward
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(report)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    void navigator.clipboard.writeText(report).then(() => {
+      setCopied(true); toast("Report copied."); setTimeout(() => setCopied(false), 2000)
+    }).catch(() => undefined)
   }
 
   const handleDownload = () => {
@@ -271,12 +265,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    toast("Report exported.")
   }
 
   const githubUrl = repoUrl.startsWith("http") ? repoUrl : `https://${repoUrl}`
+  const contextualCommands = [
+    { id: "selected-source", label: "View Source", description: selectedFile || undefined,
+      enabled: !!selectedFile, run: () => selectedFile && openSource({ path: selectedFile }) },
+    { id: "selected-impact", label: "Analyze Impact", description: selectedFile || undefined,
+      enabled: !!selectedFile, run: () => selectedFile && handleAnalyzeImpact({ file: selectedFile }) },
+    { id: "selected-humanize", label: "Humanize File", description: selectedFile || undefined,
+      enabled: !!selectedFile, run: () => selectedFile && openHumanize(selectedFile) },
+    { id: "selected-plan", label: "Create Refactor Plan", description: selectedFile || undefined,
+      enabled: !!selectedFile, run: () => selectedFile && openPlan({ planType: "split_large_file", target: selectedFile }) },
+    { id: "selected-history", label: "View File History", description: selectedFile || undefined,
+      enabled: !!selectedFile && localFeatures, run: () => selectedFile && openHistory(selectedFile) },
+    { id: "selected-doc", label: "Document File", description: selectedFile || undefined,
+      enabled: !!selectedFile, run: () => selectedFile && openDocumentation({ type: "MODULE", scope: selectedFile }) },
+    { id: "selected-definition", label: "View Definition", description: workspace.location.symbol || undefined,
+      enabled: !!selectedFile && !!workspace.location.symbol, run: () => selectedFile && openSource({ path: selectedFile,
+        startLine: workspace.location.line || undefined, endLine: workspace.location.line || undefined }) },
+    { id: "selected-rename", label: "Create Rename Plan", description: workspace.location.symbol || undefined,
+      enabled: !!selectedFile && !!workspace.location.symbol, run: () => selectedFile && workspace.location.symbol &&
+        openPlan({ planType: "rename_symbol", target: `${selectedFile}::${workspace.location.symbol}` }) },
+  ]
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 space-y-10">
+    <WorkspaceShell location={workspace.location} model={repository_model} projectId={projectId}
+      repoName={info.name} branch={info.default_branch} sha={revision} capabilities={capabilities || {}}
+      canBack={workspace.canBack} canForward={workspace.canForward} onBack={handleNavigateBack} onForward={handleNavigateForward}
+      onNavigate={navigateTab} onHome={onReset} onSettings={onSettings} commands={contextualCommands}
+      onOpenFile={(path, view) => view === "source" ? openSource({ path }) : workspace.navigate({ view, file: path })}
+      onOpenSymbol={symbol => { openSource({ path: symbol.file, startLine: symbol.line || undefined, endLine: symbol.line || undefined }); workspace.navigate({ symbol: symbol.name }, true) }}>
+    <div className="mx-auto max-w-7xl space-y-10">
+      {(activeTab === "report" || activeTab === "project") && <>
       {/* 1. Top Repository Info Banner */}
       <div className="rounded-3xl border border-line bg-surface p-6 sm:p-10 shadow-card">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -407,7 +429,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   navigateTab("explorer")
                 }}
                 className={`w-full text-left flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-all cursor-pointer ${
-                  selectedFile === file && activeTab === "explorer"
+                  selectedFile === file
                     ? "bg-brand-surface border-brand text-brand-text font-semibold"
                     : "bg-surface-inset border-line-subtle text-ink hover:border-brand-border"
                 }`}
@@ -479,220 +501,124 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* 3. Section Switcher Tabs */}
+      </>}
       {staleSession && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Repository changed since last session. Analyze latest or continue with the current snapshot. Patch and refactor contexts were not restored.</p>}
       {!localFeatures && <p className="rounded-xl border border-line bg-surface p-3 text-sm text-ink-secondary">Local filesystem, patch apply, validator execution, and Git history are available only in a local or trusted deployment.</p>}
-      <div className="flex items-center justify-between border-b border-line pb-4">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-surface-subtle/80 border border-line">
-          {projectId && <button onClick={() => navigateTab("project")} className={`rounded-xl px-4 py-2 text-xs font-semibold ${activeTab === "project" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>Project</button>}
-          {repository_model && <button onClick={() => navigateTab("health")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "health" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
-            <ZapIcon className="h-4 w-4 text-brand" /><span>Project Health</span>
-          </button>}
-          {repository_model && localFeatures && <button onClick={() => navigateTab("history")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "history" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
-            <GitBranchIcon className="h-4 w-4 text-brand" /><span>History</span>
-          </button>}
-          {repository_model && <button onClick={() => navigateTab("docs")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === "docs" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
-            <FileCodeIcon className="h-4 w-4 text-brand" /><span>Documentation</span>
-          </button>}
-          <button
-            onClick={() => navigateTab("explorer")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "explorer"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <FolderTreeIcon className="h-4 w-4 text-brand" />
-            <span>Interactive Code Explorer</span>
-            {repository_model && (
-              <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-brand-surface text-brand-text border border-brand-border/40 font-mono">
-                {Object.keys(repository_model.files || {}).length} files
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => navigateTab("graph")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "graph"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <LayersIcon className="h-4 w-4 text-brand" />
-            <span>Architecture Graph</span>
-          </button>
-
-          <button
-            onClick={() => navigateTab("ask")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "ask"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <MessageSquareIcon className="h-4 w-4 text-brand" />
-            <span>Ask Repo</span>
-          </button>
-
-          <button
-            onClick={() => navigateTab("flow")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "flow"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <WorkflowIcon className="h-4 w-4 text-brand" />
-            <span>Execution Flow</span>
-          </button>
-
-          <button
-            onClick={() => navigateTab("impact")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "impact"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <ZapIcon className="h-4 w-4 text-brand" />
-            <span>Change Impact</span>
-          </button>
-
-          <button
-            onClick={() => navigateTab("source")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeTab === "source" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}
-          ><CodeIcon className="h-4 w-4 text-brand" /><span>Source Code</span></button>
-
-          <button onClick={() => navigateTab("humanize")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${activeTab === "humanize" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}>
-            <SparklesIcon className="h-4 w-4 text-brand" /><span>Humanize Codebase</span>
-          </button>
-
-          <button onClick={() => navigateTab("refactor")} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-ink-secondary hover:text-ink"><WorkflowIcon className="h-4 w-4 text-brand" /><span>Refactor Planner</span></button>
-          {patchAvailable && <button onClick={() => navigateTab("patch")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "patch" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CodeIcon className="h-4 w-4 text-brand" /><span>Patch Review</span></button>}
-          {validatorAvailable && <button onClick={() => navigateTab("validation")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ${activeTab === "validation" ? "bg-surface text-ink shadow-subtle border border-line" : "text-ink-secondary hover:text-ink"}`}><CheckIcon className="h-4 w-4 text-brand" /><span>Validation</span></button>}
-
-          <button
-            onClick={() => navigateTab("report")}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "report"
-                ? "bg-surface text-ink shadow-subtle border border-line"
-                : "text-ink-secondary hover:text-ink"
-            }`}
-          >
-            <FileCodeIcon className="h-4 w-4 text-brand" />
-            <span>Executive Report</span>
-          </button>
-        </div>
-      </div>
-
+      {/* The workspace sidebar owns view navigation; visited views remain mounted below. */}
       {/* Views stay mounted after first visit so conversations and graph position survive navigation. */}
       {projectId && visitedTabs.has("project") && <div hidden={activeTab !== "project"}><React.Suspense fallback={<p className="p-8 text-sm">Loading project…</p>}><ProjectDashboard projectId={projectId} currentSha={revision} onNavigate={view => navigateTab(view as DashboardTab)} onOpenFile={path => { handleSelectFile(path); navigateTab("explorer") }} onHome={onReset} /></React.Suspense></div>}
       {repository_model && visitedTabs.has("docs") && <div hidden={activeTab !== "docs"}>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Documentation…</p>}>
-          <DocumentationView repoUrl={repoUrl} model={repository_model} target={documentTarget} onOpenSource={openSource} onCreatePatch={openPatch} projectId={projectId} />
-        </React.Suspense>
+        <React.Suspense fallback={<ViewSkeleton title="Documentation" />}><ErrorBoundary feature="Documentation">
+          <DocumentationView repoUrl={repoUrl} model={repository_model} target={documentTarget} initialSection={workspace.location.section} visible={activeTab === "docs"} onSelectSection={section => workspace.navigate({ view: "docs", section })} onOpenSource={openSource} onCreatePatch={openPatch} projectId={projectId} />
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("history") && <div hidden={activeTab !== "history"}>
         <div className="mb-3 flex gap-3 text-xs"><button onClick={() => openDocumentation({ type: "CHANGE_SUMMARY" })} className="text-brand">Generate Change Summary</button><button onClick={() => openDocumentation({ type: "CHANGE_SUMMARY", options: { period: "30d" } })} className="text-brand">Generate Evolution Summary</button></div>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Git History…</p>}>
-          <GitHistoryView repoUrl={repoUrl} model={repository_model} target={historyTarget}
+        <React.Suspense fallback={<ViewSkeleton title="Git History" />}><ErrorBoundary feature="Git History">
+          <GitHistoryView repoUrl={repoUrl} model={repository_model} target={{ path: historyTarget?.path || workspace.location.file || undefined, commit: workspace.location.commit, requestId: historyTarget?.requestId || 0 }} onSelectCommit={commit => workspace.navigate({ view: "history", commit })}
             onOpenSource={openSource} onAnalyzeImpact={(path) => handleAnalyzeImpact({ file: path })}
             onHumanize={openHumanize} onCreatePlan={(path) => openPlan({ planType: "split_large_file", target: path })} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("health") && <div hidden={activeTab !== "health"}>
         <button onClick={() => openDocumentation({ type: "TECH_DEBT" })} className="mb-3 text-xs font-semibold text-brand">Generate Technical Debt Report</button>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Project Health…</p>}>
+        <React.Suspense fallback={<ViewSkeleton title="Project Health" />}><ErrorBoundary feature="Project Health">
           <ProjectHealthView repoUrl={repoUrl} model={repository_model} onOpenSource={openSource}
             onAnalyzeImpact={handleAnalyzeImpact} onHumanize={openHumanize} onCreatePlan={openPlan}
             onAskRepo={handleAskAboutFile} onInspectFile={(path) => { handleSelectFile(path); navigateTab("explorer") }}
             onCreatePatch={openPatch} onTraceFlow={handleTraceFile} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("explorer") && <div hidden={activeTab !== "explorer"}>
+        <ErrorBoundary feature="Explorer">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-5 rounded-3xl border border-line bg-surface shadow-card overflow-hidden">
             <RepositoryExplorer model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile} />
           </div>
           <div className="lg:col-span-7 rounded-3xl border border-line bg-surface shadow-card overflow-hidden sticky top-6">
             <FileInspector filePath={selectedFile} model={repository_model} onSelectFile={handleSelectFile}
-              onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
-              canGoForward={historyIndex < history.length - 1} onClose={() => setSelectedFile(null)}
+              onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={workspace.canBack}
+              canGoForward={workspace.canForward} onClose={() => workspace.navigate({ file: null }, true)}
               onAskAboutFile={handleAskAboutFile} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
               onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch}
               onDocument={(path) => openDocumentation({ type: "MODULE", scope: path })} />
           </div>
         </div>
+        </ErrorBoundary>
       </div>}
       {repository_model && visitedTabs.has("graph") && <div hidden={activeTab !== "graph"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
+        <ErrorBoundary feature="Architecture graph">
         <div className="flex gap-3 text-xs"><button onClick={() => openDocumentation({ type: "ARCHITECTURE" })} className="text-brand">Export Architecture Documentation / Diagram</button>{selectedFile && <button onClick={() => openDocumentation({ type: "MODULE", scope: selectedFile })} className="text-brand">Document Module / Subsystem</button>}</div>
-        <ArchitectureGraph model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile}
-          onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={historyIndex > 0}
-          canGoForward={historyIndex < history.length - 1} onAskAboutFile={handleAskAboutFile}
+        <React.Suspense fallback={<ViewSkeleton title="Architecture Graph" />}><ArchitectureGraph model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile}
+          onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={workspace.canBack}
+          canGoForward={workspace.canForward} onAskAboutFile={handleAskAboutFile}
           onAskAboutEdge={handleAskAboutEdge} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
-          onTraceEdge={handleTraceEdge} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} />
+          onTraceEdge={handleTraceEdge} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} /></React.Suspense>
+        </ErrorBoundary>
       </div>}
       {visitedTabs.has("ask") && <div hidden={activeTab !== "ask"}>
+        <ErrorBoundary feature="Ask Repo">
         {repository_model && <div className="mb-3 flex gap-3 text-xs"><button onClick={() => openDocumentation({ type: "MODULE", scope: askScope?.file || selectedFile || "" })} className="text-brand">Document this module</button><button onClick={() => openDocumentation({ type: "API" })} className="text-brand">Generate API docs</button><button onClick={() => openDocumentation({ type: "EXECUTION_FLOW", scope: askScope?.file || selectedFile || "" })} className="text-brand">Explain this execution flow</button></div>}
-        <AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope}
+        <React.Suspense fallback={<ViewSkeleton title="Ask Repo" />}><AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
-          onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} />
+          onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} /></React.Suspense>
+        </ErrorBoundary>
       </div>}
       {repository_model && visitedTabs.has("flow") && <div hidden={activeTab !== "flow"}>
+        <ErrorBoundary feature="Execution Flow">
         <button onClick={() => openDocumentation({ type: "EXECUTION_FLOW", scope: traceTrigger?.startFile, options: { route: traceTrigger?.route, query: traceTrigger?.query } })} className="mb-3 text-xs font-semibold text-brand">Document This Flow</button>
-        <ExecutionFlowView repoUrl={repoUrl} model={repository_model} initialTrigger={traceTrigger}
+        <React.Suspense fallback={<ViewSkeleton title="Execution Flow" />}><ExecutionFlowView repoUrl={repoUrl} model={repository_model} initialTrigger={traceTrigger}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
           onExplainFlowWithAsk={handleExplainFlowWithAsk} onAnalyzeImpact={handleAnalyzeImpact}
           onOpenSource={(step) => openSource(sourceForStep(step, repository_model))} onHumanize={openHumanize} onCreatePlan={openPlan}
-          onDocumentFlow={(flow) => openDocumentation({ type: "EXECUTION_FLOW", scope: flow.steps[0]?.file, options: { flow_id: flow.id } })} />
+          onDocumentFlow={(flow) => openDocumentation({ type: "EXECUTION_FLOW", scope: flow.steps[0]?.file, options: { flow_id: flow.id } })} /></React.Suspense>
+        </ErrorBoundary>
       </div>}
       {repository_model && visitedTabs.has("impact") && <div hidden={activeTab !== "impact"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
-        <ChangeImpactView repoUrl={repoUrl} repositoryModel={repository_model} trigger={impactTrigger}
+        <ErrorBoundary feature="Change Impact">
+        <React.Suspense fallback={<ViewSkeleton title="Change Impact" />}><ChangeImpactView repoUrl={repoUrl} repositoryModel={repository_model} trigger={impactTrigger}
           onSelectFile={handleSelectFile} onNavigateTab={(tab) => navigateTab(tab as "explorer" | "graph")}
           onTraceFlow={handleTraceFile} onAskRepo={() => { setAskScope(undefined); navigateTab("ask") }}
-          onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} onHumanize={openHumanize} onCreatePlan={openPlan} />
+          onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} onHumanize={openHumanize} onCreatePlan={openPlan} /></React.Suspense>
+        </ErrorBoundary>
       </div>}
       {repository_model && visitedTabs.has("source") && <div hidden={activeTab !== "source"}>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading source viewer…</p>}>
-          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation} onNavigate={setSourceLocation} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} onViewHistory={openHistory}
+        <React.Suspense fallback={<ViewSkeleton title="Source Viewer" />}><ErrorBoundary feature="Source Viewer">
+          <SourceViewer repoUrl={repoUrl} model={repository_model} location={sourceLocation && sourceLocation.path === workspace.location.file && (sourceLocation.startLine || null) === workspace.location.line && (sourceLocation.endLine || null) === workspace.location.endLine ? sourceLocation : (workspace.location.file ? { path: workspace.location.file, startLine: workspace.location.line || undefined, endLine: workspace.location.endLine || undefined, requestId: workspace.location.line || 0 } : null)} onNavigate={next => { setSourceLocation(next); workspace.navigate({ file: next.path, line: next.startLine || null, endLine: next.endLine || null }, true) }} visible={activeTab === "source"} onHumanize={openHumanize} onCreatePlan={openPlan} onCreatePatch={openPatch} onViewHistory={openHistory}
             onDocument={(path, symbol) => openDocumentation({ type: "MODULE", scope: path, options: symbol ? { symbol } : undefined })} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("humanize") && <div hidden={activeTab !== "humanize"}>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Humanize…</p>}>
+        <React.Suspense fallback={<ViewSkeleton title="Humanize" />}><ErrorBoundary feature="Humanize">
           <HumanizeView repoUrl={repoUrl} model={repository_model} target={humanizeTarget}
             onOpenSource={openSource} onAnalyzeImpact={handleAnalyzeImpact} onAskRepo={handleAskAboutFile} onCreatePlan={openPlan} onCreatePatch={openPatch} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("refactor") && <div hidden={activeTab !== "refactor"}>
         {planTrigger && <button onClick={() => openDocumentation({ type: "REFACTOR_NOTES", scope: planTrigger.target, options: { plan_type: planTrigger.planType } })} className="mb-3 text-xs font-semibold text-brand">Export Refactor Plan</button>}
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading planner…</p>}>
+        <React.Suspense fallback={<ViewSkeleton title="Refactor Planner" />}><ErrorBoundary feature="Refactor Planner">
           <RefactorPlannerView repoUrl={repoUrl} model={repository_model} trigger={planTrigger}
             projectId={projectId}
             onOpenSource={openSource} onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
             onOpenGraph={handleShowInGraphFromAsk} onCreatePatch={openPatch}
             onDocumentPlan={(target, planType) => openDocumentation({ type: "REFACTOR_NOTES", scope: target, options: { plan_type: planType } })} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("patch") && <div hidden={activeTab !== "patch"}>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Patch Review…</p>}>
+        <React.Suspense fallback={<ViewSkeleton title="Patch Review" />}><ErrorBoundary feature="Patch Review">
           <PatchReviewView repoUrl={repoUrl} model={repository_model} trigger={patchTrigger}
             onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
             onOpenSource={(path) => openSource({ path })} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {repository_model && visitedTabs.has("validation") && <div hidden={activeTab !== "validation"}>
-        <React.Suspense fallback={<p className="p-8 text-sm text-ink-secondary">Loading Validation…</p>}>
+        <React.Suspense fallback={<ViewSkeleton title="Validation" />}><ErrorBoundary feature="Validation">
           <ValidationView repoUrl={repoUrl} paths={selectedFile ? [selectedFile] : []} />
-        </React.Suspense>
+        </ErrorBoundary></React.Suspense>
       </div>}
       {activeTab === "report" && <div className="rounded-3xl border border-line bg-surface p-6 sm:p-12 shadow-card"><ReportView reportMarkdown={report} /></div>}
     </div>
+    </WorkspaceShell>
   )
 }
 

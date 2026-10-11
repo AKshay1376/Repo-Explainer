@@ -1,6 +1,8 @@
 import { apiFetch } from "../../apiClient"
 import React, { useEffect, useState } from "react"
 import { stageGraph, type ValidatorProfile, type ValidatorResult } from "../../types/validators"
+import { ConfirmDialog } from "../ui/AccessibleDialog"
+import { useToast } from "../ui/Toasts"
 
 interface Props { repoUrl: string; paths?: string[]; patchId?: string; compact?: boolean;
   initialProfile?: ValidatorProfile | null; initialHistory?: ValidatorResult[] }
@@ -14,12 +16,14 @@ const post = async <T,>(path: string, body: object): Promise<T> => {
 
 export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId = "", compact = false,
   initialProfile = null, initialHistory = [] }) => {
+  const toast = useToast()
   const [profile, setProfile] = useState<ValidatorProfile | null>(initialProfile)
   const [history, setHistory] = useState<ValidatorResult[]>(initialHistory)
   const [selected, setSelected] = useState<string[]>([])
   const [results, setResults] = useState<ValidatorResult[]>([])
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [pendingTrust, setPendingTrust] = useState<"trusted_once" | "trusted_repo" | null>(null)
   const refresh = async () => {
     const [p, h] = await Promise.all([
       apiFetch(`/api/validators/profile?repo_url=${encodeURIComponent(repoUrl)}`).then((response) => response.json()),
@@ -40,6 +44,7 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
           repo_url: repoUrl, command_ids: ids, patch_id: patchId, paths,
         })
         setResults(response.results)
+        toast("Validation completed. Review the command results below.")
       }
       await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Validation failed") }
@@ -59,13 +64,14 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
         <span><strong className="text-ink">{command.label}</strong> · {command.kind} · {command.confidence} confidence · {command.trusted ? "trusted" : "untrusted"}<br />
           <code>{command.command.join(" ")}</code> · {command.working_directory} · {command.source}</span></label>)}</div>
       {profile.commands.length === 0 && <p className="text-xs text-ink-secondary">No allowlisted validator commands were detected.</p>}
-      <div className="flex flex-wrap gap-2 text-xs"><button disabled={busy || !selected.length} onClick={() => void perform("trust", "trusted_once")} className="rounded-lg border border-brand-border px-3 py-2 font-semibold text-brand disabled:opacity-40">Trust Once</button>
-        <button disabled={busy || !selected.length} onClick={() => void perform("trust", "trusted_repo")} className="rounded-lg border border-brand-border px-3 py-2 font-semibold text-brand disabled:opacity-40">Trust Repository</button>
+      <div className="flex flex-wrap gap-2 text-xs"><button disabled={busy || !selected.length} onClick={() => setPendingTrust("trusted_once")} className="rounded-lg border border-brand-border px-3 py-2 font-semibold text-brand disabled:opacity-40">Trust Once</button>
+        <button disabled={busy || !selected.length} onClick={() => setPendingTrust("trusted_repo")} className="rounded-lg border border-brand-border px-3 py-2 font-semibold text-brand disabled:opacity-40">Trust Repository</button>
         <button disabled={busy || !selected.length || selected.some((id) => !profile.commands.find((item) => item.id === id)?.trusted)} onClick={() => void perform("run")} className="rounded-lg bg-brand px-3 py-2 font-semibold text-white disabled:opacity-40">Run Selected</button></div>
       <div className="flex flex-wrap gap-2" aria-label="Validation stages">{stageGraph(profile, results.length ? results : visibleHistory).map((item) => <span key={item.name} className="rounded-full bg-surface-inset px-2 py-1 text-[11px] text-ink-secondary">{item.name}: {item.state}</span>)}</div>
       {results.map((item) => <div key={item.timestamp + item.command_id} className="rounded-lg bg-surface-inset p-2 text-xs text-ink-secondary"><strong>{item.command_id}: {item.state}</strong> · {item.duration_seconds}s · exit {item.exit_code ?? "timeout"}<pre className="max-h-36 overflow-auto whitespace-pre-wrap">{item.output_summary}</pre></div>)}
       {!compact && <details><summary className="cursor-pointer text-xs font-semibold text-brand">Validation history ({visibleHistory.length})</summary>
         {visibleHistory.slice(0, 20).map((item) => <p key={item.timestamp + item.command_id} className="text-xs text-ink-secondary">{item.timestamp}: {item.command_id} · {item.state} · {item.duration_seconds}s</p>)}</details>}
     </>}
+    {pendingTrust && <ConfirmDialog title={pendingTrust === "trusted_once" ? "Trust selected validators once?" : "Trust selected validators for this repository?"} consequence={`Trust ${selected.length} selected command${selected.length === 1 ? "" : "s"}: ${profile?.commands.filter(item => selected.includes(item.id)).map(item => item.label).join(", ") || "none"}. Trusted commands may execute only when Run Selected is used${pendingTrust === "trusted_repo" ? ", and this trust persists for this repository." : " in this session."}`} confirmLabel={pendingTrust === "trusted_once" ? "Trust once" : "Trust repository"} onClose={() => setPendingTrust(null)} onConfirm={() => { const scope = pendingTrust; setPendingTrust(null); void perform("trust", scope) }} />}
   </section>
 }

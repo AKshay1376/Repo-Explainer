@@ -1,20 +1,26 @@
 import { apiFetch } from "./apiClient"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { Navbar } from "./components/Navbar"
 import { Hero } from "./components/Hero"
-import { ProductStory } from "./components/ProductStory"
 import { LoadingState } from "./components/LoadingState"
-import { Dashboard, type AnalysisData } from "./components/Dashboard"
+import type { AnalysisData } from "./components/Dashboard"
 import { LegalModal, type LegalDocType } from "./components/LegalModal"
-import { ShieldCheckIcon, TerminalIcon, GithubIcon, InstagramIcon } from "./components/ui/icons"
+import { TerminalIcon, GithubIcon } from "./components/ui/icons"
 import { localApi } from "./hooks/useProjects"
 import type { SavedProject } from "./types/persistence"
 import { setCsrfToken } from "./apiClient"
 import { jobLabel } from "./lib/deployment"
 import { ServiceUnavailable } from "./components/ServiceUnavailable"
+import { SettingsDialog } from "./components/SettingsDialog"
+import { Onboarding } from "./components/Onboarding"
+import { getLastRequestId } from "./apiClient"
+import { emitProductEvent } from "./lib/productEvents"
+import { HomeCommands } from "./components/HomeCommands"
 
 const HomeView = React.lazy(() => import("./components/Home/HomeView").then(module => ({ default: module.HomeView })))
 const ProjectDashboard = React.lazy(() => import("./components/Projects/ProjectDashboard").then(module => ({ default: module.ProjectDashboard })))
+const Dashboard = React.lazy(() => import("./components/Dashboard").then(module => ({ default: module.Dashboard })))
+const ProductStory = React.lazy(() => import("./components/ProductStory").then(module => ({ default: module.ProductStory })))
 
 export const App: React.FC = () => {
   const [runtime, setRuntime] = useState<"checking" | "online" | "offline">("checking")
@@ -32,6 +38,12 @@ export const App: React.FC = () => {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [requestedTab, setRequestedTab] = useState<string | null>(null)
   const [requestedFile, setRequestedFile] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [homeCommandsOpen, setHomeCommandsOpen] = useState(false)
+  const [showProductTour, setShowProductTour] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(() => typeof localStorage !== "undefined" && localStorage.getItem("repo-explainer:onboarded") !== "1")
+  const [errorRequestId, setErrorRequestId] = useState<string | null>(null)
+  const linkedRepoOpened = useRef(false)
 
   const checkServer = async () => {
     setRuntime("checking")
@@ -55,6 +67,15 @@ export const App: React.FC = () => {
     window.addEventListener("repo-auth-required", required)
     return () => window.removeEventListener("repo-auth-required", required)
   }, [])
+  useEffect(() => {
+    if (status === "success") return
+    const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setHomeCommandsOpen(true) }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [status])
 
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -110,10 +131,12 @@ export const App: React.FC = () => {
   }
 
   const handleAnalyze = async (url: string, tab?: string, file?: string) => {
+    emitProductEvent("analysis_started")
     setCurrentUrl(url)
     setRequestedTab(tab || null)
     setRequestedFile(file || null)
     setErrorMessage(null)
+    setErrorRequestId(null)
     setStatus("loading")
 
     try {
@@ -135,6 +158,7 @@ export const App: React.FC = () => {
           msg = "GitHub API rate limit reached. Please try again later."
         }
         setErrorMessage(msg)
+        setErrorRequestId(response.headers.get("X-Request-ID") || getLastRequestId())
         setStatus("error")
         return
       }
@@ -148,15 +172,26 @@ export const App: React.FC = () => {
         setProjectId(saved.project.id)
       } catch { setProjectId(null) }
       setStatus("success")
+      emitProductEvent("analysis_completed")
       // Smooth scroll to results
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (err: any) {
       setErrorMessage("Could not connect to the analysis service. Please check that the server is running.")
+      setErrorRequestId(getLastRequestId())
       setStatus("error")
     }
   }
 
+  useEffect(() => {
+    if (linkedRepoOpened.current || runtime !== "online" || (authMode !== "disabled" && !authenticated) || status !== "idle") return
+    const repo = new URLSearchParams(window.location.search).get("repo")
+    if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return
+    linkedRepoOpened.current = true
+    void handleAnalyze(`https://github.com/${repo}`)
+  }, [runtime, authMode, authenticated, status])
+
   const handleReset = () => {
+    window.history.pushState({}, "", "/")
     setStatus("idle")
     setData(null)
     setProjectId(null)
@@ -190,7 +225,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-canvas text-ink selection:bg-brand/20 selection:text-brand-text">
-      <Navbar onReset={handleReset} hasAnalysis={status === "success"} />
+      <Navbar onReset={handleReset} hasAnalysis={status === "success"} onSettings={() => setSettingsOpen(true)} />
 
       <main className="flex-1">
         {job && <div role="status" className="mx-auto max-w-5xl px-6 pt-4 text-sm text-ink">
@@ -203,9 +238,9 @@ export const App: React.FC = () => {
         </div>}
         {status === "idle" && (
           <>
-            <React.Suspense fallback={<p className="p-8 text-sm">Loading saved projects…</p>}><HomeView onAnalyze={handleAnalyze} onOpenProject={handleOpenProject} /></React.Suspense>
-            <Hero onAnalyze={handleAnalyze} onQueue={queueAnalysis} isLoading={false} />
-            <ProductStory onSelectSample={(sampleUrl) => handleAnalyze(sampleUrl)} />
+            <React.Suspense fallback={<p className="p-8 text-sm">Loading saved projects…</p>}><HomeView onAnalyze={handleAnalyze} onQueue={queueAnalysis} onOpenProject={handleOpenProject} onSettings={() => setSettingsOpen(true)} /></React.Suspense>
+            <div className="mx-auto max-w-7xl px-4 pb-8 sm:px-6"><button onClick={() => setShowProductTour(!showProductTour)} aria-expanded={showProductTour} className="text-sm font-semibold text-brand">{showProductTour ? "Hide product tour" : "Explore how Repo Explainer works"}</button></div>
+            {showProductTour && <React.Suspense fallback={<p className="p-8 text-sm">Loading product tour…</p>}><ProductStory onSelectSample={(sampleUrl) => handleAnalyze(sampleUrl)} /></React.Suspense>}
           </>
         )}
 
@@ -219,19 +254,18 @@ export const App: React.FC = () => {
               onAnalyze={handleAnalyze}
               onQueue={queueAnalysis}
               isLoading={false}
-              error={errorMessage}
               initialUrl={currentUrl}
               onClearError={() => {
                 setErrorMessage(null)
                 setStatus("idle")
               }}
             />
-            <ProductStory onSelectSample={(sampleUrl) => handleAnalyze(sampleUrl)} />
+            {errorMessage && <div role="alert" className="mx-auto max-w-2xl rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-950 dark:bg-rose-950/20 dark:text-rose-100"><strong>Analysis needs attention.</strong> {errorMessage}{errorRequestId && <p className="mt-2 font-mono text-xs">Request ID: {errorRequestId}</p>}<div className="mt-3 flex gap-3"><button onClick={() => void handleAnalyze(currentUrl)} className="font-semibold underline">Retry</button><button onClick={handleReset} className="underline">Choose another repository</button></div><details className="mt-2"><summary className="cursor-pointer">Technical details</summary><p>The request did not complete. Use the request ID in server logs if this persists.</p></details></div>}
           </>
         )}
 
         {status === "success" && data && (
-          <Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} projectId={projectId} initialTab={requestedTab} initialFileOverride={requestedFile} capabilities={capabilities} />
+          <React.Suspense fallback={<LoadingState repoUrl={currentUrl} />}><Dashboard data={data} onReset={handleReset} repoUrl={currentUrl} projectId={projectId} initialTab={requestedTab} initialFileOverride={requestedFile} capabilities={capabilities} onSettings={() => setSettingsOpen(true)} /></React.Suspense>
         )}
         {status === "saved" && projectId && <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><React.Suspense fallback={<p className="text-sm">Loading saved project…</p>}><ProjectDashboard projectId={projectId} currentSha={null} onNavigate={view => void handleAnalyze(currentUrl, view)} onOpenFile={path => void handleAnalyze(currentUrl, "explorer", path)} onHome={handleReset} /></React.Suspense></div>}
       </main>
@@ -266,23 +300,13 @@ export const App: React.FC = () => {
                 Terms of Service
               </button>
               <a
-                href="https://github.com/psf/requests"
+                href="https://github.com/AKshay1376/Repo-Explainer"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-brand transition-colors inline-flex items-center gap-1"
               >
                 <GithubIcon className="h-3.5 w-3.5" />
-                <span>Reference Repository</span>
-              </a>
-              <a
-                href="https://instagram.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-brand hover:text-brand-hover transition-colors inline-flex items-center gap-1 font-medium"
-                title="Follow on Instagram"
-              >
-                <InstagramIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
-                <span>Instagram</span>
+                <span>Source repository</span>
               </a>
             </div>
           </div>
@@ -301,6 +325,9 @@ export const App: React.FC = () => {
 
       {/* Accessible Draft Legal Modal */}
       <LegalModal type={legalDoc} onClose={() => setLegalDoc(null)} />
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} capabilities={capabilities} onResetOnboarding={() => { localStorage.removeItem("repo-explainer:onboarded"); setSettingsOpen(false); setShowOnboarding(true) }} />}
+      {showOnboarding && status === "idle" && <Onboarding onClose={() => { localStorage.setItem("repo-explainer:onboarded", "1"); setShowOnboarding(false) }} />}
+      {homeCommandsOpen && status !== "success" && <HomeCommands onClose={() => setHomeCommandsOpen(false)} onSettings={() => setSettingsOpen(true)} onHome={handleReset} />}
     </div>
   )
 }

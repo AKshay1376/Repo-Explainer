@@ -6,13 +6,13 @@ import { DOC_TYPES, type DocSection, type DocType, type DocumentTarget } from ".
 import { useDocumentation } from "../../hooks/useDocumentation"
 import { localApi } from "../../hooks/useProjects"
 
-interface Props { repoUrl: string; model: RepositoryModel; target?: DocumentTarget | null; onOpenSource: (location: SourceLocation) => void; onCreatePatch: (trigger: PatchTrigger) => void; projectId?: string | null }
+interface Props { repoUrl: string; model: RepositoryModel; target?: DocumentTarget | null; initialSection?: string | null; visible?: boolean; onSelectSection?: (section: string) => void; onOpenSource: (location: SourceLocation) => void; onCreatePatch: (trigger: PatchTrigger) => void; projectId?: string | null }
 const label = (type: string) => type.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
 const localMarkdown = (title: string, revision: string, sections: DocSection[]) => `# ${title}\n\nRevision: ${revision}\n\n` + sections.map(part => `## ${part.title}\n\n` +
   ([...part.facts.map(value => `- **FACT:** ${value}`), ...part.inferences.map(value => `- **INFERENCE:** ${value}`), ...part.unknowns.map(value => `- **UNKNOWN:** ${value}`), ...part.citations.map(ref => `- Source: ${ref.file}${ref.start_line ? `:${ref.start_line}` : ""}`)].join("\n")) +
   (part.diagram ? `\n\n\`\`\`mermaid\n${part.diagram}\n\`\`\`` : "")).join("\n\n")
 
-export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onOpenSource, onCreatePatch, projectId }) => {
+export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, initialSection, visible = true, onSelectSection, onOpenSource, onCreatePatch, projectId }) => {
   const [docType, setDocType] = useState<DocType>(target?.type || "PROJECT_OVERVIEW")
   const [scope, setScope] = useState(target?.scope || "")
   const [period, setPeriod] = useState("latest")
@@ -23,6 +23,11 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onO
   const [actionError, setActionError] = useState("")
   const [saved, setSaved] = useState("")
   const { document, currentReadme, readmeDraft, readmePatchReady, loading, error, generate, regenerateSection, download, request } = useDocumentation(repoUrl, model)
+  useEffect(() => {
+    if (visible && initialSection && document?.sections.some(part => part.id === initialSection)) {
+      window.document.getElementById(`doc-${initialSection}`)?.scrollIntoView({ block: "start" })
+    }
+  }, [initialSection, document?.id, visible])
   const run = (candidate: DocumentTarget) => { setActiveTarget(candidate); setAiPreview(""); void generate(candidate) }
   useEffect(() => { if (target) { setDocType(target.type); setScope(target.scope || ""); run(target) } }, [target?.requestId])
   const selected = (): DocumentTarget => ({ type: docType, scope: scope.trim() || undefined,
@@ -64,7 +69,7 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, onO
       {(error || actionError) && <p role="alert" className="text-xs text-rose-600">{error || actionError}</p>}
     </div>
     {document && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-      <nav aria-label="Documentation contents" className="self-start rounded-2xl border border-line bg-surface p-4 lg:sticky lg:top-4"><h3 className="font-semibold text-ink">Contents</h3>{document.sections.map(part => <a key={part.id} href={`#doc-${part.id}`} className="mt-2 block text-xs text-brand">{part.title}</a>)}</nav>
+      <nav aria-label="Documentation contents" className="self-start rounded-2xl border border-line bg-surface p-4 lg:sticky lg:top-4"><h3 className="font-semibold text-ink">Contents</h3>{document.sections.map(part => <a key={part.id} href={`#doc-${part.id}`} onClick={event => { event.preventDefault(); onSelectSection?.(part.id); window.document.getElementById(`doc-${part.id}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }} className="mt-2 block text-xs text-brand">{part.title}</a>)}</nav>
       <div className="space-y-4">
         <div className="rounded-2xl border border-line bg-surface p-5"><h3 className="text-lg font-bold text-ink">{document.title}</h3><p className="text-xs text-ink-secondary">Revision {document.repo_revision.slice(0, 10)} · {document.confidence} confidence · {document.cached ? "cached" : "generated"} · {document.llm_calls} AI calls</p>
           <div className="mt-3 flex flex-wrap gap-2">{(["markdown", "html", "json"] as const).map(format => <button key={format} onClick={() => void guarded(() => download(format))} className="rounded border border-line px-3 py-1 text-xs text-brand">Download {format === "markdown" ? ".md" : format === "html" ? ".html" : ".json"}</button>)}{projectId && <button onClick={save} className="rounded border border-line px-3 py-1 text-xs text-brand">Save to Project</button>}</div>{saved && <p role="status" className="mt-2 text-xs text-emerald-700">{saved}</p>}

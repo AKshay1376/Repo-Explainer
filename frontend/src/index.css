@@ -58,6 +58,19 @@
     --color-nav-border: rgba(255, 92, 32, 0.08);
     --color-modal-bg: #FFFFFF;
 
+    /* Product shell scale and semantic feedback */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --radius-control: 0.625rem;
+    --radius-panel: 1rem;
+    --status-success: #166534;
+    --status-warning: #92400e;
+    --status-danger: #b91c1c;
+    --status-info: #1d4ed8;
+
     /* Apple Glass Material Tokens - Light (with subtle brand border tint) */
     --color-glass-nav-top: rgba(250, 249, 246, 0.76);
     --color-glass-nav-scrolled: rgba(250, 249, 246, 0.88);
@@ -106,6 +119,10 @@
     --brand-surface: rgba(255, 92, 32, 0.05);
     --brand-text: #FF8554;
     --brand-glow: 0 0 60px rgba(255, 92, 32, 0.14);
+    --status-success: #86efac;
+    --status-warning: #fcd34d;
+    --status-danger: #fda4af;
+    --status-info: #93c5fd;
 
     /* Backwards compatibility with --color-accent references */
     --color-accent: var(--brand);
@@ -159,6 +176,22 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow-x: hidden;
     transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  .compact-density .workspace-shell {
+    --space-4: 0.65rem;
+    --space-6: 1rem;
+  }
+
+  .compact-density .workspace-shell article,
+  .compact-density .workspace-shell section.rounded-3xl {
+    padding-block: var(--space-4);
+  }
+
+  .workspace-shell table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   ::selection {
