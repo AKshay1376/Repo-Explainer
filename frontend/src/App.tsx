@@ -21,6 +21,7 @@ const HomeView = React.lazy(() => import("./components/Home/HomeView").then(modu
 const ProjectDashboard = React.lazy(() => import("./components/Projects/ProjectDashboard").then(module => ({ default: module.ProjectDashboard })))
 const Dashboard = React.lazy(() => import("./components/Dashboard").then(module => ({ default: module.Dashboard })))
 const ProductStory = React.lazy(() => import("./components/ProductStory").then(module => ({ default: module.ProductStory })))
+const LifecycleGraph = React.lazy(() => import("./components/Lifecycle/LifecycleGraph").then(module => ({ default: module.LifecycleGraph })))
 
 export const App: React.FC = () => {
   const [runtime, setRuntime] = useState<"checking" | "online" | "offline">("checking")
@@ -231,6 +232,7 @@ export const App: React.FC = () => {
         {job && <div role="status" className="mx-auto max-w-5xl px-6 pt-4 text-sm text-ink">
           <div className="rounded-xl border border-line bg-surface p-3">
             <strong>Background analysis: {jobLabel(job.status)}</strong> · {job.progress}% · {job.message}
+            <div className="mt-2"><React.Suspense fallback={null}><LifecycleGraph type="job" status={job.status} detail={`${job.progress}% complete`} compact /></React.Suspense></div>
             {job.status === "queued" && <button onClick={() => void cancelJob()} className="ml-3 text-brand">Cancel</button>}
             {job.status === "completed" && <button onClick={() => void handleAnalyze(job.repo_url)} className="ml-3 text-brand">Open project</button>}
             {["completed", "failed", "cancelled"].includes(job.status) && <button onClick={() => setJob(null)} className="ml-3 text-ink-secondary">Dismiss</button>}

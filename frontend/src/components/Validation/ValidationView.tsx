@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react"
 import { stageGraph, type ValidatorProfile, type ValidatorResult } from "../../types/validators"
 import { ConfirmDialog } from "../ui/AccessibleDialog"
 import { useToast } from "../ui/Toasts"
+import { LifecycleGraph } from "../Lifecycle/LifecycleGraph"
 
 interface Props { repoUrl: string; paths?: string[]; patchId?: string; compact?: boolean;
   initialProfile?: ValidatorProfile | null; initialHistory?: ValidatorResult[] }
@@ -23,6 +24,7 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
   const [results, setResults] = useState<ValidatorResult[]>([])
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
   const [pendingTrust, setPendingTrust] = useState<"trusted_once" | "trusted_repo" | null>(null)
   const refresh = async () => {
     const [p, h] = await Promise.all([
@@ -35,6 +37,7 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
   useEffect(() => { void refresh().catch((cause) => setError(String(cause))) }, [repoUrl])
   const perform = async (action: "detect" | "trust" | "run", scope?: "trusted_once" | "trusted_repo") => {
     setBusy(true); setError("")
+    if (action === "run") setRunning(true)
     try {
       const ids = selected.length ? selected : profile?.commands.map((item) => item.id) || []
       if (action === "detect") await post("/api/validators/detect", { repo_url: repoUrl })
@@ -48,7 +51,7 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
       }
       await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Validation failed") }
-    finally { setBusy(false) }
+    finally { setBusy(false); setRunning(false) }
   }
   const visibleHistory = paths.length ? history.filter((item) => item.paths?.some((path) => paths.includes(path))) : history
   return <section aria-label="Validation" className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-4">
@@ -58,6 +61,7 @@ export const ValidationView: React.FC<Props> = ({ repoUrl, paths = [], patchId =
     {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
     {!profile ? <p className="text-xs text-ink-secondary">Loading validation profile…</p> : <>
       <p className="text-xs text-ink-secondary">Detected stack: {profile.detected_stack.join(", ") || "unknown"} · Status: <strong>{profile.trust_scope.toUpperCase()}</strong></p>
+      <LifecycleGraph type="validator" status={running ? "running" : results[0]?.state === "TIMEOUT" ? "timed_out" : results[0]?.state.toLowerCase() || profile.trust_scope} compact />
       {profile.warnings.map((warning) => <p key={warning} className="text-xs text-amber-700">{warning}</p>)}
       <div className="space-y-2" aria-label="Review Commands">{profile.commands.map((command) => <label key={command.id} className="flex items-start gap-2 rounded-lg border border-line p-2 text-xs text-ink-secondary">
         <input type="checkbox" checked={selected.includes(command.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, command.id] : current.filter((id) => id !== command.id))} />

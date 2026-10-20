@@ -4,7 +4,7 @@
  * Orchestrates toolbar, blast radius card, graph canvas, and details panel.
  */
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { PlanTrigger } from "../../types/refactor"
 import type { ImpactNode } from "../../types/impact"
@@ -14,6 +14,9 @@ import { BlastRadiusCard } from "./BlastRadiusCard"
 import { ImpactToolbar } from "./ImpactToolbar"
 import { ImpactCanvas } from "./ImpactCanvas"
 import { ImpactDetailsPanel } from "./ImpactDetailsPanel"
+import { buildImpactStory } from "../../lib/storyBuilder"
+import { useStoryMode } from "../../hooks/useStoryMode"
+import { StoryController } from "../StoryMode/StoryController"
 
 interface ChangeImpactViewProps {
   repoUrl: string
@@ -26,6 +29,10 @@ interface ChangeImpactViewProps {
   onNavigateTab?: (tab: string) => void
   onTraceFlow?: (file: string) => void
   onAskRepo?: (question: string) => void
+  storyLink?: { story?: string | null; step?: number | null; presentation?: boolean; file?: string | null }
+  onStoryNavigate?: (state: { story: string | null; step: number | null; presentation: boolean; file: string | null }) => void
+  onDocumentImpact?: (analysis: ImpactAnalysis) => void
+  visible?: boolean
 }
 
 export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
@@ -39,6 +46,10 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
   onNavigateTab,
   onTraceFlow,
   onAskRepo,
+  storyLink,
+  onStoryNavigate,
+  onDocumentImpact,
+  visible = true,
 }) => {
   const [layoutDirection, setLayoutDirection] = useState<"LR" | "TB">("LR")
 
@@ -71,6 +82,14 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
     clearSelection,
     analyzeImpact,
   } = useChangeImpact({ repoUrl, repositoryModel })
+  const story = useMemo(() => analysis ? buildImpactStory(analysis) : null, [analysis])
+  const storyMode = useStoryMode(story, { active: !!storyLink?.story, step: storyLink?.step, presentation: storyLink?.presentation }, visible, analysis?.target.file || "",
+    state => onStoryNavigate?.({ ...state, file: analysis?.target.file || null }))
+  useEffect(() => {
+    if (!trigger && !analysis && storyLink?.story && storyLink.file && repositoryModel?.files?.[storyLink.file]) {
+      analyzeImpact({ file: storyLink.file })
+    }
+  }, [storyLink?.story, storyLink?.file, analysis?.id])
 
   // Trigger from outside (FileInspector, Graph, AskRepo, ExecutionFlow)
   useEffect(() => {
@@ -110,9 +129,9 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className={storyMode.presentation ? "fixed inset-0 z-[100] overflow-auto bg-surface p-4 space-y-4" : "space-y-4"}>
       {/* Target configuration and filter bar */}
-      <ImpactToolbar
+      {!storyMode.presentation && <ImpactToolbar
         repositoryModel={repositoryModel}
         targetFile={targetFile}
         targetSymbol={targetSymbol}
@@ -136,7 +155,12 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
         onSortByChange={setSortBy}
         onToggleLayout={() => setLayoutDirection((prev) => (prev === "LR" ? "TB" : "LR"))}
         onAnalyze={() => analyzeImpact({ file: targetFile, symbol: targetSymbol, changeType, depth })}
-      />
+      />}
+
+      {analysis && <StoryController sequence={story} mode={storyMode} launchLabel="Explain Blast Radius"
+        onSource={link => onOpenSource?.({ file: link.file, symbol: link.symbol || undefined, line: link.line || undefined })}
+        onAsk={(title, link) => onAskRepo?.(`Explain ${title}${link ? ` in ${link.file}` : ""} using the current change impact evidence.`)}
+        onDocument={() => onDocumentImpact?.(analysis)} />}
 
       {/* Error banner if analysis failed */}
       {error && (
@@ -153,7 +177,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
       )}
 
       {/* Blast Radius & Risk Assessment Section */}
-      {analysis && (
+      {analysis && !storyMode.presentation && (
         <BlastRadiusCard
           analysis={analysis}
           onExplainImpact={onAskRepo ? handleExplainImpact : undefined}
@@ -163,9 +187,11 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
       {/* Graph and Details Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* React Flow Graph (spans 2 columns on large screens) */}
-        <div className={analysis ? "lg:col-span-2" : "lg:col-span-3"}>
+        <div className={analysis && !storyMode.presentation ? "lg:col-span-2" : "lg:col-span-3"}>
           <ImpactCanvas
             analysis={analysis}
+            story={storyMode.active ? story : null}
+            storyMode={storyMode}
             isLoading={isLoading}
             selectedNode={selectedNode}
             selectedEdge={selectedEdge}
@@ -182,7 +208,7 @@ export const ChangeImpactView: React.FC<ChangeImpactViewProps> = ({
         </div>
 
         {/* Details and Entity Inspector Panel (spans 1 column on large screens) */}
-        {analysis && (
+        {analysis && !storyMode.presentation && (
           <div className="lg:col-span-1">
             <ImpactDetailsPanel
               analysis={analysis}

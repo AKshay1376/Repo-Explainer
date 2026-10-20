@@ -3,7 +3,7 @@
  * Interactive canvas rendering the single-path execution flow with step cards and relationship edges.
  */
 
-import React, { useMemo, useEffect } from "react"
+import React, { useMemo, useEffect, useRef } from "react"
 import {
   ReactFlow,
   Background,
@@ -11,12 +11,16 @@ import {
   useReactFlow,
   type Node,
   type Edge,
+  type Viewport,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
 import type { ExecutionFlow, ExecutionStep, ExecutionEdge } from "../../types/trace"
 import { StepNode } from "./StepNode"
 import { applyStepFlowLayout } from "../../lib/graphLayout"
+import { decorateStoryGraph } from "../../lib/storyBuilder"
+import type { StorySequence } from "../../types/story"
+import type { StoryModeState } from "../../hooks/useStoryMode"
 
 interface FlowCanvasProps {
   flow: ExecutionFlow
@@ -24,6 +28,8 @@ interface FlowCanvasProps {
   selectedStep: ExecutionStep | null
   onSelectStep: (step: ExecutionStep) => void
   onSelectEdge: (edge: ExecutionEdge) => void
+  story?: StorySequence | null
+  storyMode?: StoryModeState
 }
 
 const nodeTypes = {
@@ -36,8 +42,11 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
   selectedStep,
   onSelectStep,
   onSelectEdge,
+  story,
+  storyMode,
 }) => {
-  const { fitView } = useReactFlow()
+  const { fitView, getViewport, setViewport, setCenter } = useReactFlow()
+  const savedViewport = useRef<Viewport | null>(null)
 
   // 1. Build raw nodes and edges
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(() => {
@@ -99,6 +108,22 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
     return () => clearTimeout(timer)
   }, [flow.id, direction, fitView])
 
+  const decorated = useMemo(() => decorateStoryGraph(layoutedNodes, layoutedEdges, story || null, storyMode?.index || 0),
+    [layoutedNodes, layoutedEdges, story, storyMode?.index])
+  useEffect(() => {
+    if (storyMode?.active && !savedViewport.current) savedViewport.current = getViewport()
+    if (!storyMode?.active && savedViewport.current) {
+      void setViewport(savedViewport.current, { duration: storyMode?.reducedMotion ? 0 : 250 })
+      savedViewport.current = null
+    }
+  }, [storyMode?.active, getViewport, setViewport])
+  useEffect(() => {
+    if (!storyMode?.active || !storyMode.follow || !story) return
+    const node = layoutedNodes.find(item => item.id === story.steps[storyMode.index]?.node_ids[0])
+    if (node) void setCenter(node.position.x + 140, node.position.y + 70,
+      { zoom: getViewport().zoom, duration: storyMode.reducedMotion ? 0 : 350 })
+  }, [storyMode?.active, storyMode?.index, storyMode?.follow, storyMode?.reducedMotion, story, layoutedNodes, setCenter, getViewport])
+
   const handleNodeClick = (_: React.MouseEvent, node: Node) => {
     const step = node.data?.step as ExecutionStep | undefined
     if (step) {
@@ -116,8 +141,8 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({
   return (
     <div className="relative w-full h-full min-h-[550px] bg-canvas overflow-hidden">
       <ReactFlow
-        nodes={layoutedNodes}
-        edges={layoutedEdges}
+        nodes={decorated.nodes}
+        edges={decorated.edges}
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}

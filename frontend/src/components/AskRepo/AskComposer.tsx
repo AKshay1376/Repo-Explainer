@@ -14,6 +14,7 @@ interface AskComposerProps {
   onClearScope?: () => void
   onClearConversation?: () => void
   hasMessages?: boolean
+  initialQuestion?: string
 }
 
 export const AskComposer: React.FC<AskComposerProps> = ({
@@ -23,8 +24,10 @@ export const AskComposer: React.FC<AskComposerProps> = ({
   onClearScope,
   onClearConversation,
   hasMessages = false,
+  initialQuestion,
 }) => {
   const [text, setText] = useState("")
+  useEffect(() => { if (initialQuestion) setText(initialQuestion) }, [initialQuestion])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Focus textarea on mount

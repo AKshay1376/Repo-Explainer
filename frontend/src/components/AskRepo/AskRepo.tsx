@@ -23,6 +23,7 @@ interface AskRepoProps {
   repoUrl: string
   model?: RepositoryModel
   initialScope?: AskRepoScope
+  initialQuestion?: string
   onOpenSource?: (location: SourceLocation) => void
   onHumanize?: (path: string) => void
   onInspectFile: (filePath: string) => void
@@ -35,6 +36,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
   repoUrl,
   model,
   initialScope,
+  initialQuestion,
   onInspectFile,
   onOpenSource,
   onHumanize,
@@ -197,6 +199,7 @@ export const AskRepo: React.FC<AskRepoProps> = ({
       {/* 3. Bottom Composer */}
       <div className="p-4 sm:p-5 border-t border-line bg-surface-subtle/30 shrink-0">
         <AskComposer
+          initialQuestion={initialQuestion}
           onSend={handleSend}
           isSubmitting={isSubmitting}
           scope={activeScope}

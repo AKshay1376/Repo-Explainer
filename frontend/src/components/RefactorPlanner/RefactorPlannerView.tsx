@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { RepositoryModel } from "../../types/repository"
 import type { SourceLocation } from "../../types/source"
 import type { PatchTrigger } from "../../types/patch"
@@ -8,6 +8,11 @@ import { PlanStepCard } from "./PlanStepCard"
 import { PlanGraph } from "./PlanGraph"
 import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
 import { localApi } from "../../hooks/useProjects"
+import { buildRefactorStory } from "../../lib/storyBuilder"
+import { useStoryMode } from "../../hooks/useStoryMode"
+import { StoryController } from "../StoryMode/StoryController"
+import { LifecycleGraph } from "../Lifecycle/LifecycleGraph"
+import type { StorySourceLink } from "../../types/story"
 
 interface Props {
   repoUrl: string
@@ -19,11 +24,15 @@ interface Props {
   onCreatePatch?: (trigger: PatchTrigger) => void
   onDocumentPlan?: (target: string, planType: PlanType) => void
   projectId?: string | null
+  storyLink?: { story?: string | null; step?: number | null; presentation?: boolean; planType?: string | null; planTarget?: string | null; planDestination?: string | null }
+  onStoryNavigate?: (state: { story: string | null; step: number | null; presentation: boolean; planType: string | null; planTarget: string | null; planDestination: string | null }) => void
+  onAskStoryStep?: (title: string, link: StorySourceLink) => void
+  visible?: boolean
 }
 
 const label = (type: PlanType) => type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 
-export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch, onDocumentPlan, projectId }) => {
+export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, onOpenSource, onOpenImpact, onOpenGraph, onCreatePatch, onDocumentPlan, projectId, storyLink, onStoryNavigate, onAskStoryStep, visible = true }) => {
   const [planType, setPlanType] = useState<PlanType>(trigger?.planType || "rename_symbol")
   const [target, setTarget] = useState(trigger?.target || "")
   const [symbol, setSymbol] = useState(String(trigger?.options?.symbol || ""))
@@ -31,6 +40,7 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
   const [aiConsent, setAiConsent] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
   const [plannedTrigger, setPlannedTrigger] = useState<PlanTrigger | null>(null)
+  const restoredStory = useRef(false)
   const { planResult, validationResult, explanation, loading, error, generate, validate, explain } = useRefactorPlanner(repoUrl, model)
   const requestPlan = (candidate: PlanTrigger) => { setPlannedTrigger(candidate); void generate(candidate) }
   useEffect(() => {
@@ -43,12 +53,24 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
           (trigger.planType !== "rename_symbol" || trigger.options?.symbol)) requestPlan(trigger)
     }
   }, [trigger?.requestId])
+  useEffect(() => {
+    if (restoredStory.current || trigger?.target || !storyLink?.story || !storyLink.planTarget || !storyLink.planType
+      || !PLAN_TYPES.includes(storyLink.planType as PlanType)) return
+    restoredStory.current = true
+    const restoredType = storyLink.planType as PlanType
+    const symbol = restoredType === "rename_symbol" ? storyLink.planTarget.split("::")[1] : undefined
+    requestPlan({ planType: restoredType, target: storyLink.planTarget, destination: storyLink.planDestination || undefined,
+      options: symbol ? { file: storyLink.planTarget.split("::")[0], symbol } : undefined })
+  }, [storyLink?.story, storyLink?.planType, storyLink?.planTarget, storyLink?.planDestination])
   const current = (): PlanTrigger => ({ planType, target: planType === "rename_symbol" ? `${target}::${symbol}` : target,
     destination: destination.trim() || undefined,
     options: planType === "rename_symbol" ? { file: target, symbol } : (symbol ? { symbol } : {}) })
   const plan = planResult?.plan
-  return <section className="space-y-5" aria-label="Refactoring and migration planner">
-    <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-4">
+  const story = useMemo(() => plan ? buildRefactorStory(plan) : null, [plan])
+  const storyMode = useStoryMode(story, { active: !!storyLink?.story, step: storyLink?.step, presentation: storyLink?.presentation }, visible, plan?.id || "",
+    state => onStoryNavigate?.({ ...state, planType: plan?.plan_type || null, planTarget: plan?.target || null, planDestination: plan?.destination || null }))
+  return <section className={storyMode.presentation ? "fixed inset-0 z-[100] overflow-auto bg-surface p-4 space-y-4" : "space-y-5"} aria-label="Refactoring and migration planner">
+    {!storyMode.presentation && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-4">
       <div><h2 className="text-lg font-bold text-ink">Refactoring &amp; Migration Planner</h2>
         <p className="mt-1 text-xs text-ink-secondary">Evidence-grounded plans only. No repository code is changed or executed.</p></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -72,9 +94,9 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
       {loading && <p role="status" className="text-xs text-ink-secondary">Building plan…</p>}
       {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
       {plan?.target && <FileHistoryContext repoUrl={repoUrl} path={plan.target} />}
-    </div>
+    </div>}
     {plan && <>
-      <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
+      {!storyMode.presentation && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-base font-semibold text-ink">{plan.summary}</h3>
         {onDocumentPlan && <button onClick={() => onDocumentPlan(plan.target, plan.plan_type)} className="text-xs font-semibold text-brand">Export Refactor Plan</button>}
         {projectId && <button onClick={() => void localApi(`/projects/${projectId}/plans`, "POST", { target: plan.target, risk_level: plan.risk_level, repo_sha: plan.revision, steps: plan.steps }).then(() => setSaveMessage("Plan saved to this project.")).catch(cause => setSaveMessage(cause instanceof Error ? cause.message : "Save failed."))} className="ml-3 text-xs font-semibold text-brand">Save Plan</button>}{saveMessage && <p role="status" className="text-xs text-ink-secondary">{saveMessage}</p>}
@@ -94,29 +116,34 @@ export const RefactorPlannerView: React.FC<Props> = ({ repoUrl, model, trigger, 
         {plan.proposed_partitions.map((part) => <p key={part.name} className="text-xs text-ink-secondary">Proposed {part.name} partition: {part.symbols.join(", ")}</p>)}
         {plan.partition_edges.map((edge, index) => <p key={`${edge.source}:${edge.target}:${index}`} className="text-xs text-ink-secondary">Partition edge {edge.source} → {edge.target}: {edge.evidence}</p>)}
         {plan.plan_type.includes("dependency") && <p className="text-xs text-ink-secondary">Package evidence: {plan.migration_evidence.manifests.length} manifests · {plan.migration_evidence.constraints.length} constraints · {plan.migration_evidence.import_sites.length} imports · {plan.migration_evidence.usage_sites.length} usage lines · {plan.migration_evidence.wrapper_sites.length} wrapper lines.</p>}
-      </div>
-      <PlanGraph steps={plan.steps} />
-      <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
+      </div>}
+      <StoryController sequence={story} mode={storyMode} launchLabel="Walk Through Plan"
+        onSource={link => onOpenSource({ path: link.file, startLine: link.line || undefined })}
+        onAsk={(title, link) => { if (link) onAskStoryStep?.(title, link) }}
+        onDocument={() => onDocumentPlan?.(plan.target, plan.plan_type)} />
+      {!storyMode.presentation && <LifecycleGraph type="refactor" status="planned" detail="Plan generated; no changes applied." compact />}
+      <PlanGraph steps={plan.steps} story={storyMode.active ? story : null} storyMode={storyMode} />
+      {!storyMode.presentation && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Ordered plan steps</h3>
         {plan.steps.map((step) => <PlanStepCard key={step.id} step={step} onOpenSource={onOpenSource} onOpenImpact={onOpenImpact} onOpenGraph={onOpenGraph}
           onGeneratePatch={onCreatePatch && ((plan.plan_type === "rename_symbol" && step.id === "definition" && step.can_auto_preview) ||
             (["move_file", "move_module"].includes(plan.plan_type) && ["move", "compatibility"].includes(step.id)))
             ? (stepId) => onCreatePatch({ source: "planner", path: plan.target.split("::")[0], planTrigger: plannedTrigger || current(), stepId }) : undefined} />)}
-      </div>
-      <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
+      </div>}
+      {!storyMode.presentation && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Validation plan</h3>
         <p className="text-xs text-ink-secondary">This checklist never runs analyzed repository code.</p>
         {plan.validation.map((item) => <p key={item} className="text-xs text-ink-secondary">□ {item}</p>)}
         <button onClick={() => void validate(plannedTrigger || current())} className="text-xs font-semibold text-brand">Refresh validation checklist</button>
         {validationResult && <p className="text-xs text-ink-secondary">{validationResult.validation_state}: {validationResult.checks.length} checks; no code executed.</p>}
-      </div>
-      <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
+      </div>}
+      {!storyMode.presentation && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-3">
         <h3 className="text-sm font-semibold text-ink">Optional AI explanation</h3>
         <p className="text-xs text-ink-secondary">Sends only the plan summary, risks, warnings, and steps after your explicit request. No source content is sent.</p>
         <label className="flex gap-2 text-xs text-ink-secondary"><input type="checkbox" checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} /> I explicitly request an AI explanation.</label>
         <button disabled={!aiConsent} onClick={() => { setAiConsent(false); void explain(plannedTrigger || current()) }} className="text-xs font-semibold text-brand disabled:opacity-40">Explain plan with AI</button>
         {explanation && <p className="whitespace-pre-wrap text-xs text-ink-secondary">{explanation.explanation}</p>}
-      </div>
+      </div>}
     </>}
   </section>
 }

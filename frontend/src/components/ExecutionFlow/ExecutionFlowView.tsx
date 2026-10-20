@@ -3,7 +3,7 @@
  * Primary view component for Phase 7 Execution Path Tracing.
  */
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { ReactFlowProvider } from "@xyflow/react"
 import type { RepositoryModel } from "../../types/repository"
 import type { PlanTrigger } from "../../types/refactor"
@@ -15,6 +15,10 @@ import { StepDetailsPanel } from "./StepDetailsPanel"
 import { EdgeDetailsCard } from "./EdgeDetailsCard"
 import { StarterFlows } from "./StarterFlows"
 import { TraceHistory } from "./TraceHistory"
+import { buildExecutionStory } from "../../lib/storyBuilder"
+import { useStoryMode } from "../../hooks/useStoryMode"
+import { StoryController } from "../StoryMode/StoryController"
+import type { StorySourceLink } from "../../types/story"
 import {
   WorkflowIcon,
   PlayIcon,
@@ -35,6 +39,10 @@ interface ExecutionFlowViewProps {
   onExplainFlowWithAsk: (flow: ExecutionFlow) => void
   onAnalyzeImpact?: (trigger: { file?: string; symbol?: string; route?: string }) => void
   onDocumentFlow?: (flow: ExecutionFlow) => void
+  storyLink?: { story?: string | null; step?: number | null; presentation?: boolean; flow?: string | null; trace?: string | null }
+  onStoryNavigate?: (state: { story: string | null; step: number | null; presentation: boolean; flow: string | null; trace: string | null }) => void
+  onAskStoryStep?: (title: string, link: StorySourceLink) => void
+  visible?: boolean
 }
 
 const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
@@ -49,6 +57,10 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
   onExplainFlowWithAsk,
   onAnalyzeImpact,
   onDocumentFlow,
+  storyLink,
+  onStoryNavigate,
+  onAskStoryStep,
+  visible = true,
 }) => {
   const [direction, setDirection] = useState<"TB" | "LR">("TB")
 
@@ -67,31 +79,45 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
     setSelectedEdge,
     clearTrace,
   } = useExecutionTrace({ repoUrl, repositoryModel: model })
+  const [traceForLink, setTraceForLink] = useState<string | null>(storyLink?.trace || null)
+  const runTrace = (trigger: TraceTrigger) => {
+    setTraceForLink(trigger.route || trigger.query || null)
+    void executeTrace(trigger)
+  }
+  const story = useMemo(() => activeFlow ? buildExecutionStory(activeFlow) : null, [activeFlow])
+  const storyMode = useStoryMode(story, { active: !!storyLink?.story, step: storyLink?.step, presentation: storyLink?.presentation }, visible,
+    `${traceForLink || ""}:${activeFlow?.id || ""}`, state => onStoryNavigate?.({ ...state, flow: activeFlow?.id || null, trace: traceForLink }))
+  useEffect(() => {
+    if (storyLink?.flow && flows.some(flow => flow.id === storyLink.flow) && activeFlowId !== storyLink.flow) selectFlow(storyLink.flow)
+  }, [storyLink?.flow, flows, activeFlowId, selectFlow])
 
   // Trigger trace on initialTrigger update or initial load
   useEffect(() => {
     if (initialTrigger) {
-      executeTrace(initialTrigger)
+      runTrace(initialTrigger)
+    } else if (storyLink?.trace && flows.length === 0 && !isLoading) {
+      runTrace(/^(GET|POST|PUT|PATCH|DELETE|ALL)\s+\//.test(storyLink.trace)
+        ? { route: storyLink.trace } : { query: storyLink.trace })
     } else if (flows.length === 0 && !isLoading) {
       // Auto-trigger default flow based on available model
       if (model?.entry_points && model.entry_points.length > 0) {
-        executeTrace({ query: "startup", startFile: model.entry_points[0].path })
+        runTrace({ query: "startup", startFile: model.entry_points[0].path })
       } else if (model?.api_routes && model.api_routes.length > 0) {
-        executeTrace({ route: `${model.api_routes[0].method} ${model.api_routes[0].path}` })
+        runTrace({ route: `${model.api_routes[0].method} ${model.api_routes[0].path}` })
       }
     }
-  }, [initialTrigger])
+  }, [initialTrigger, storyLink?.trace])
 
   const handleSearch = (query: string) => {
-    executeTrace({ query })
+    runTrace({ query })
   }
 
   const handleSelectStarter = (trigger: TraceTrigger) => {
-    executeTrace(trigger)
+    runTrace(trigger)
   }
 
   const handleTraceFromStep = (step: ExecutionStep) => {
-    executeTrace({
+    runTrace({
       startFile: step.file,
       startSymbol: step.symbol || undefined,
     })
@@ -108,9 +134,9 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
   const edgeTargetStep = activeFlow?.steps.find((s) => s.id === selectedEdge?.target_step)
 
   return (
-    <div className="flex flex-col h-[780px] max-h-[85vh] rounded-3xl border border-line bg-surface shadow-card overflow-hidden text-ink">
+    <div className={`flex flex-col rounded-3xl border border-line bg-surface shadow-card overflow-hidden text-ink ${storyMode.presentation ? "fixed inset-0 z-[100] h-screen" : "h-[780px] max-h-[85vh]"}`}>
       {/* 1. Toolbar */}
-      <FlowToolbar
+      {!storyMode.presentation && <FlowToolbar
         flows={flows}
         activeFlow={activeFlow}
         activeFlowId={activeFlowId}
@@ -121,19 +147,24 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
         onFitView={() => {}}
         onExplainFlow={onExplainFlowWithAsk}
         isLoading={isLoading}
-      />
+      />}
+
+      {activeFlow && <div className="shrink-0 border-b border-line p-2"><StoryController sequence={story} mode={storyMode} launchLabel={activeFlow.trigger?.match(/^(GET|POST|PUT|PATCH|DELETE) /) ? "Play Route" : "Play Flow"}
+        onSource={link => onOpenSource?.({ id: "story-source", file: link.file, line: link.line, symbol: link.symbol, label: link.symbol || link.file, type: "UNKNOWN", architecture_layer: "", evidence: "", confidence: "HIGH" })}
+        onAsk={(title, link) => link && onAskStoryStep ? onAskStoryStep(title, link) : onExplainFlowWithAsk(activeFlow)}
+        onDocument={() => onDocumentFlow?.(activeFlow)} /></div>}
 
       {/* 2. Suggestions & Recent History Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-surface-subtle/30 border-b border-line text-xs shrink-0">
+      {!storyMode.presentation && <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-surface-subtle/30 border-b border-line text-xs shrink-0">
         <StarterFlows model={model} onSelectTrigger={handleSelectStarter} />
         <TraceHistory history={history} onSelectTrigger={handleSelectStarter} />
         {activeFlow && onDocumentFlow && <button onClick={() => onDocumentFlow(activeFlow)} className="font-semibold text-brand">Document This Flow</button>}
-      </div>
+      </div>}
 
       {/* 3. Main Body */}
       <div className="relative flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
         {/* Left/Main Canvas Area */}
-        <div className={`relative h-full ${selectedStep ? "lg:col-span-8" : "lg:col-span-12"}`}>
+        <div className={`relative h-full ${selectedStep && !storyMode.presentation ? "lg:col-span-8" : "lg:col-span-12"}`}>
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full p-12 text-center space-y-4">
               <div className="h-10 w-10 animate-spin rounded-full border-3 border-brand/20 border-t-brand" />
@@ -160,6 +191,8 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
           ) : activeFlow && activeFlow.steps.length > 0 ? (
             <FlowCanvas
               flow={activeFlow}
+              story={storyMode.active ? story : null}
+              storyMode={storyMode}
               direction={direction}
               selectedStep={selectedStep}
               onSelectStep={(step) => {
@@ -197,7 +230,7 @@ const FlowViewInner: React.FC<ExecutionFlowViewProps> = ({
         </div>
 
         {/* Right Step Details Panel (if step selected) */}
-        {selectedStep && (
+        {selectedStep && !storyMode.presentation && (
           <div className="lg:col-span-4 h-full z-20 shadow-xl lg:shadow-none">
             <StepDetailsPanel
               step={selectedStep}

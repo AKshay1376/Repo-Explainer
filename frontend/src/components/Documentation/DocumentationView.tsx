@@ -5,6 +5,7 @@ import type { PatchTrigger } from "../../types/patch"
 import { DOC_TYPES, type DocSection, type DocType, type DocumentTarget } from "../../types/documentation"
 import { useDocumentation } from "../../hooks/useDocumentation"
 import { localApi } from "../../hooks/useProjects"
+import { LifecycleGraph } from "../Lifecycle/LifecycleGraph"
 
 interface Props { repoUrl: string; model: RepositoryModel; target?: DocumentTarget | null; initialSection?: string | null; visible?: boolean; onSelectSection?: (section: string) => void; onOpenSource: (location: SourceLocation) => void; onCreatePatch: (trigger: PatchTrigger) => void; projectId?: string | null }
 const label = (type: string) => type.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())
@@ -66,6 +67,7 @@ export const DocumentationView: React.FC<Props> = ({ repoUrl, model, target, ini
         <button disabled={loading} onClick={() => run(selected())} className="rounded bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{docType === "README_DRAFT" ? "Generate README Draft" : "Generate"}</button>
       </div>
       {loading && <p role="status" className="text-xs text-ink-secondary">Collecting bounded repository evidence…</p>}
+      {(loading || document || error) && <LifecycleGraph type="documentation" status={loading ? "generating" : error ? "failed" : "completed"} compact />}
       {(error || actionError) && <p role="alert" className="text-xs text-rose-600">{error || actionError}</p>}
     </div>
     {document && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">

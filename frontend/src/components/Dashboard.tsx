@@ -163,6 +163,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     navigateTab("patch")
   }, [navigateTab])
   const [askScope, setAskScope] = useState<AskRepoScope | undefined>(undefined)
+  const [askQuestion, setAskQuestion] = useState("")
   const [traceTrigger, setTraceTrigger] = useState<TraceTrigger | undefined>(undefined)
   const [impactTrigger, setImpactTrigger] = useState<ImpactTrigger | null>(null)
 
@@ -177,7 +178,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }
   const revision = repository_model?.metadata?.latest_commit_sha || null
   const restore = React.useCallback((view: string | null, file: string | null) => {
-    if (initialTab) return
+    if (initialTab || new URLSearchParams(window.location.search).has("view")) return
     workspace.navigate({ ...(file && repository_model?.files?.[file] ? { file } : {}),
       ...(view && allowedViews.includes(view as DashboardTab) ? { view: view as DashboardTab } : {}) }, true)
   }, [repository_model, workspace.navigate, initialTab, allowedViews])
@@ -185,6 +186,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleAskAboutFile = (filePath: string) => {
     setAskScope({ file: filePath })
+    setAskQuestion("")
+    navigateTab("ask")
+  }
+
+  const handleAskAboutStoryStep = (title: string, filePath: string) => {
+    setAskScope({ file: filePath })
+    setAskQuestion(`Explain the step "${title}" in ${filePath} using repository evidence.`)
     navigateTab("ask")
   }
 
@@ -550,6 +558,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <ErrorBoundary feature="Architecture graph">
         <div className="flex gap-3 text-xs"><button onClick={() => openDocumentation({ type: "ARCHITECTURE" })} className="text-brand">Export Architecture Documentation / Diagram</button>{selectedFile && <button onClick={() => openDocumentation({ type: "MODULE", scope: selectedFile })} className="text-brand">Document Module / Subsystem</button>}</div>
         <React.Suspense fallback={<ViewSkeleton title="Architecture Graph" />}><ArchitectureGraph model={repository_model} selectedFile={selectedFile} onSelectFile={handleSelectFile}
+          visible={activeTab === "graph"} storyLink={workspace.location} onStoryNavigate={state => { if (activeTab === "graph") workspace.navigate(state, true) }}
+          onDocumentArchitecture={() => openDocumentation({ type: "ARCHITECTURE" })}
           onNavigateBack={handleNavigateBack} onNavigateForward={handleNavigateForward} canGoBack={workspace.canBack}
           canGoForward={workspace.canForward} onAskAboutFile={handleAskAboutFile}
           onAskAboutEdge={handleAskAboutEdge} onTraceFile={handleTraceFile} onTraceRoute={handleTraceRoute}
@@ -559,7 +569,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {visitedTabs.has("ask") && <div hidden={activeTab !== "ask"}>
         <ErrorBoundary feature="Ask Repo">
         {repository_model && <div className="mb-3 flex gap-3 text-xs"><button onClick={() => openDocumentation({ type: "MODULE", scope: askScope?.file || selectedFile || "" })} className="text-brand">Document this module</button><button onClick={() => openDocumentation({ type: "API" })} className="text-brand">Generate API docs</button><button onClick={() => openDocumentation({ type: "EXECUTION_FLOW", scope: askScope?.file || selectedFile || "" })} className="text-brand">Explain this execution flow</button></div>}
-        <React.Suspense fallback={<ViewSkeleton title="Ask Repo" />}><AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope}
+        <React.Suspense fallback={<ViewSkeleton title="Ask Repo" />}><AskRepo repoUrl={repoUrl} model={repository_model} initialScope={askScope} initialQuestion={askQuestion}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
           onTraceFlow={handleTraceFromAsk} onAnalyzeImpact={handleAnalyzeImpact} onOpenSource={openSource} onHumanize={openHumanize} /></React.Suspense>
         </ErrorBoundary>
@@ -568,6 +578,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <ErrorBoundary feature="Execution Flow">
         <button onClick={() => openDocumentation({ type: "EXECUTION_FLOW", scope: traceTrigger?.startFile, options: { route: traceTrigger?.route, query: traceTrigger?.query } })} className="mb-3 text-xs font-semibold text-brand">Document This Flow</button>
         <React.Suspense fallback={<ViewSkeleton title="Execution Flow" />}><ExecutionFlowView repoUrl={repoUrl} model={repository_model} initialTrigger={traceTrigger}
+          visible={activeTab === "flow"} storyLink={workspace.location} onStoryNavigate={state => { if (activeTab === "flow") workspace.navigate(state, true) }} onAskStoryStep={(title, link) => handleAskAboutStoryStep(title, link.file)}
           onInspectFile={handleInspectFileFromAsk} onShowInGraph={handleShowInGraphFromAsk}
           onExplainFlowWithAsk={handleExplainFlowWithAsk} onAnalyzeImpact={handleAnalyzeImpact}
           onOpenSource={(step) => openSource(sourceForStep(step, repository_model))} onHumanize={openHumanize} onCreatePlan={openPlan}
@@ -577,8 +588,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {repository_model && visitedTabs.has("impact") && <div hidden={activeTab !== "impact"} className="rounded-3xl border border-line bg-surface p-4 sm:p-6 shadow-card space-y-4">
         <ErrorBoundary feature="Change Impact">
         <React.Suspense fallback={<ViewSkeleton title="Change Impact" />}><ChangeImpactView repoUrl={repoUrl} repositoryModel={repository_model} trigger={impactTrigger}
+          visible={activeTab === "impact"} storyLink={workspace.location} onStoryNavigate={state => { if (activeTab === "impact") workspace.navigate(state, true) }}
+          onDocumentImpact={analysis => openDocumentation({ type: "MODULE", scope: analysis.target.file })}
           onSelectFile={handleSelectFile} onNavigateTab={(tab) => navigateTab(tab as "explorer" | "graph")}
-          onTraceFlow={handleTraceFile} onAskRepo={() => { setAskScope(undefined); navigateTab("ask") }}
+          onTraceFlow={handleTraceFile} onAskRepo={question => { setAskScope({ file: impactTrigger?.file || selectedFile }); setAskQuestion(question); navigateTab("ask") }}
           onOpenSource={(node) => openSource(sourceForImpact(node, repository_model))} onHumanize={openHumanize} onCreatePlan={openPlan} /></React.Suspense>
         </ErrorBoundary>
       </div>}
@@ -598,6 +611,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {planTrigger && <button onClick={() => openDocumentation({ type: "REFACTOR_NOTES", scope: planTrigger.target, options: { plan_type: planTrigger.planType } })} className="mb-3 text-xs font-semibold text-brand">Export Refactor Plan</button>}
         <React.Suspense fallback={<ViewSkeleton title="Refactor Planner" />}><ErrorBoundary feature="Refactor Planner">
           <RefactorPlannerView repoUrl={repoUrl} model={repository_model} trigger={planTrigger}
+            visible={activeTab === "refactor"} storyLink={workspace.location} onStoryNavigate={state => { if (activeTab === "refactor") workspace.navigate(state, true) }} onAskStoryStep={(title, link) => handleAskAboutStoryStep(title, link.file)}
             projectId={projectId}
             onOpenSource={openSource} onOpenImpact={(path) => handleAnalyzeImpact({ file: path })}
             onOpenGraph={handleShowInGraphFromAsk} onCreatePatch={openPatch}

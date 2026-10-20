@@ -13,6 +13,7 @@ import { FileHistoryContext } from "../GitHistory/FileHistoryContext"
 import { ConfirmDialog } from "../ui/AccessibleDialog"
 import { emitProductEvent } from "../../lib/productEvents"
 import { useToast } from "../ui/Toasts"
+import { LifecycleGraph } from "../Lifecycle/LifecycleGraph"
 
 const ValidationView = React.lazy(() => import("../Validation/ValidationView").then((module) => ({ default: module.ValidationView })))
 
@@ -90,6 +91,7 @@ export const PatchReviewView: React.FC<Props> = ({ repoUrl, model, trigger, onOp
     </div>
     {patch && <div className="rounded-3xl border border-line bg-surface p-5 shadow-card space-y-4">
       <div className="flex flex-wrap items-center gap-2"><h3 className="mr-auto font-semibold text-ink">{patch.summary}</h3><span className="text-xs text-ink-secondary">{patch.status} · {patch.risk_level} risk · {patch.id.slice(0, 12)}</span></div>
+      <LifecycleGraph type="patch" status={patch.status} detail={validation?.state ? `Validation: ${validation.state}` : undefined} compact />
       <p className="text-xs text-ink-secondary">Patch confidence: <strong>{patch.confidence || "HIGH"}</strong> · {patch.confidence !== "HIGH" && (patch.source === "planner" || patch.source === "verified") ? "Preview Only" : "review and validate before apply"}</p>
       <p className="text-xs text-ink-secondary">Revision {patch.repo_revision.slice(0, 12)} · {patch.git.available ? `${patch.git.branch} · ${patch.git.dirty ? "dirty" : "clean"} · ${patch.git.commit_status}` : "Git unavailable"} · source {patch.source_id}</p>
       {patch.git.diff_stat && <details className="text-xs text-ink-secondary"><summary className="cursor-pointer font-semibold text-brand">Working tree diff against HEAD</summary><pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-surface-inset p-2">{patch.git.diff_stat}</pre></details>}

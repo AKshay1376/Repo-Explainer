@@ -1,5 +1,6 @@
 import type { RepositoryModel } from "../types/repository"
 import { tabAvailable } from "./deployment"
+import { PLAN_TYPES } from "../types/refactor"
 
 export const VIEW_GROUPS = [
   { label: "Understand", views: ["explorer", "graph", "source", "flow", "ask"] },
@@ -18,6 +19,16 @@ export type WorkspaceLocation = {
   endLine?: number | null
   commit?: string | null
   section?: string | null
+  story?: string | null
+  step?: number | null
+  presentation?: boolean
+  graphMode?: "architecture" | "files" | null
+  flow?: string | null
+  trace?: string | null
+  planType?: string | null
+  planTarget?: string | null
+  planDestination?: string | null
+  lifecycle?: string | null
 }
 
 export const VIEW_LABELS: Record<WorkspaceView, string> = {
@@ -51,7 +62,24 @@ export function sanitizeLocation(candidate: Partial<WorkspaceLocation>, model: R
     ? Number(candidate.endLine) : null
   const commit = candidate.commit && /^[0-9a-f]{7,64}$/i.test(candidate.commit) ? candidate.commit : null
   const section = candidate.section && /^[\w-]{1,80}$/.test(candidate.section) ? candidate.section : null
-  return { view, file, symbol, line, endLine, commit, section }
+  const rawStory = candidate.story && /^[\w.:-]{1,100}$/.test(candidate.story) ? candidate.story : null
+  const story = (view === "graph" && rawStory === "architecture") ||
+    (view === "flow" && !!rawStory) ||
+    (view === "impact" && /^impact-[a-z0-9]+$/.test(rawStory || "")) ||
+    (view === "refactor" && /^refactor-[a-z0-9]+$/.test(rawStory || "")) ? rawStory : null
+  const step = story && Number.isSafeInteger(candidate.step) && Number(candidate.step) > 0 && Number(candidate.step) <= 1000 ? Number(candidate.step) : null
+  const graphMode = candidate.graphMode === "architecture" || candidate.graphMode === "files" ? candidate.graphMode : null
+  const flow = candidate.flow && /^[\w.:-]{1,100}$/.test(candidate.flow) ? candidate.flow : null
+  const trace = candidate.trace && /^[\w .:/{}-]{1,100}$/.test(candidate.trace) && !/^[a-z]:[\\/]/i.test(candidate.trace)
+    && !/(?:\.env(?:\.|$)|credential|secret|token|private[_-]?key)/i.test(candidate.trace)
+    ? candidate.trace : null
+  const lifecycle = candidate.lifecycle && /^(patch|validator|job|refactor|documentation):[\w-]{1,40}$/.test(candidate.lifecycle) ? candidate.lifecycle : null
+  const planType = view === "refactor" && candidate.planType && PLAN_TYPES.includes(candidate.planType as typeof PLAN_TYPES[number]) ? candidate.planType : null
+  const safePlanValue = (value: string | null | undefined) => !!value && /^[\w./:@^-]{1,180}$/.test(value)
+    && !/^(?:[a-z]:[\\/]|\/)|(?:^|\/)\.\.(?:\/|$)|(?:\.env|credential|secret|token|private[_-]?key)/i.test(value)
+  const planTarget = planType && safePlanValue(candidate.planTarget) ? candidate.planTarget : null
+  const planDestination = planTarget && safePlanValue(candidate.planDestination) ? candidate.planDestination : null
+  return { view, file, symbol, line, endLine, commit, section, story, step, presentation: !!story && !!candidate.presentation, graphMode, flow, trace, lifecycle, planType, planTarget, planDestination }
 }
 
 export function readWorkspaceLink(search: string, model: RepositoryModel | undefined,
@@ -60,7 +88,10 @@ export function readWorkspaceLink(search: string, model: RepositoryModel | undef
   return sanitizeLocation({
     view: isWorkspaceView(query.get("view")) ? query.get("view") as WorkspaceView : fallback,
     file: query.get("file"), symbol: query.get("symbol"), line: Number(query.get("line")), endLine: Number(query.get("end")),
-    commit: query.get("commit"), section: query.get("section"),
+    commit: query.get("commit"), section: query.get("section"), story: query.get("story"), step: Number(query.get("step")),
+    presentation: query.get("presentation") === "1", graphMode: query.get("graphMode") as WorkspaceLocation["graphMode"],
+    flow: query.get("flow"), trace: query.get("trace"), lifecycle: query.get("lifecycle"),
+    planType: query.get("planType"), planTarget: query.get("planTarget"), planDestination: query.get("planDestination"),
   }, model, allowed, fallback)
 }
 
@@ -76,6 +107,16 @@ export function workspaceLink(location: WorkspaceLocation, model: RepositoryMode
   if (location.endLine) query.set("end", String(location.endLine))
   if (location.commit) query.set("commit", location.commit)
   if (location.section) query.set("section", location.section)
+  if (location.story) query.set("story", location.story)
+  if (location.step) query.set("step", String(location.step))
+  if (location.presentation) query.set("presentation", "1")
+  if (location.graphMode) query.set("graphMode", location.graphMode)
+  if (location.flow) query.set("flow", location.flow)
+  if (location.trace) query.set("trace", location.trace)
+  if (location.lifecycle) query.set("lifecycle", location.lifecycle)
+  if (location.planType) query.set("planType", location.planType)
+  if (location.planTarget) query.set("planTarget", location.planTarget)
+  if (location.planDestination) query.set("planDestination", location.planDestination)
   return `/?${query}`
 }
 

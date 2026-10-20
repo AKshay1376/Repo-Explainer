@@ -5,16 +5,19 @@
  * filtering, sorting, and edge inspection.
  */
 
-import React, { useMemo } from "react"
+import React, { useMemo, useEffect, useRef } from "react"
 import {
   ReactFlow,
   Controls,
   Background,
   MiniMap,
+  ReactFlowProvider,
+  useReactFlow,
   BackgroundVariant,
   type Node,
   type Edge,
   type NodeTypes,
+  type Viewport,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
@@ -22,9 +25,14 @@ import type { ImpactAnalysis, ImpactNode, ImpactEdge } from "../../types/impact"
 import { ImpactNodeView } from "./ImpactNodeView"
 import { applyImpactGraphLayout } from "../../lib/graphLayout"
 import { ZapIcon, AlertCircleIcon } from "../ui/icons"
+import { decorateStoryGraph } from "../../lib/storyBuilder"
+import type { StorySequence } from "../../types/story"
+import type { StoryModeState } from "../../hooks/useStoryMode"
 
 interface ImpactCanvasProps {
   analysis: ImpactAnalysis | null
+  story?: StorySequence | null
+  storyMode?: StoryModeState
   isLoading: boolean
   selectedNode: ImpactNode | null
   selectedEdge: ImpactEdge | null
@@ -45,8 +53,10 @@ const nodeTypes: NodeTypes = {
 
 const MAX_DISPLAYED_NODES = 100
 
-export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
+const ImpactCanvasInner: React.FC<ImpactCanvasProps> = ({
   analysis,
+  story,
+  storyMode,
   isLoading,
   selectedNode,
   selectedEdge,
@@ -60,6 +70,8 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
   onSelectEdge,
   onClearSelection,
 }) => {
+  const { getViewport, setViewport, setCenter } = useReactFlow()
+  const savedViewport = useRef<Viewport | null>(null)
   // Filter and sort nodes
   const { filteredNodes, isCapped, totalBeforeCap } = useMemo(() => {
     if (!analysis) return { filteredNodes: [], isCapped: false, totalBeforeCap: 0 }
@@ -158,6 +170,20 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
     const { nodes, edges } = applyImpactGraphLayout(rfNodes, rfEdges, layoutDirection)
     return { layoutedNodes: nodes, layoutedEdges: edges }
   }, [analysis, filteredNodes, selectedNode, selectedEdge, layoutDirection])
+  const decorated = useMemo(() => decorateStoryGraph(layoutedNodes, layoutedEdges, story || null, storyMode?.index || 0),
+    [layoutedNodes, layoutedEdges, story, storyMode?.index])
+  useEffect(() => {
+    if (storyMode?.active && !savedViewport.current) savedViewport.current = getViewport()
+    if (!storyMode?.active && savedViewport.current) {
+      void setViewport(savedViewport.current, { duration: storyMode?.reducedMotion ? 0 : 250 }); savedViewport.current = null
+    }
+  }, [storyMode?.active, getViewport, setViewport])
+  useEffect(() => {
+    if (!storyMode?.active || !storyMode.follow || !story) return
+    const node = layoutedNodes.find(item => item.id === story.steps[storyMode.index]?.node_ids[0])
+    if (node) void setCenter(node.position.x + 110, node.position.y + 50,
+      { zoom: getViewport().zoom, duration: storyMode.reducedMotion ? 0 : 350 })
+  }, [storyMode?.active, storyMode?.index, storyMode?.follow, storyMode?.reducedMotion, story, layoutedNodes, setCenter, getViewport])
 
   if (isLoading) {
     return (
@@ -186,7 +212,7 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
   }
 
   return (
-    <div className="relative w-full h-[520px] bg-background border border-border rounded-xl overflow-hidden shadow-inner">
+    <div className={`relative w-full bg-background border border-border rounded-xl overflow-hidden shadow-inner ${storyMode?.presentation ? "h-[calc(100vh-250px)]" : "h-[520px]"}`}>
       {/* Capped Warning Banner */}
       {isCapped && (
         <div className="absolute top-3 left-3 z-10 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-1.5 rounded-lg backdrop-blur-md flex items-center gap-1.5 shadow">
@@ -198,8 +224,8 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
       )}
 
       <ReactFlow
-        nodes={layoutedNodes}
-        edges={layoutedEdges}
+        nodes={decorated.nodes}
+        edges={decorated.edges}
         nodeTypes={nodeTypes}
         fitView
         onNodeClick={(_, node) => {
@@ -219,6 +245,8 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
         <MiniMap
           nodeColor={(node) => {
             const nData = node.data as unknown as ImpactNode
+            if (storyMode?.active && story?.steps[storyMode.index]?.node_ids.includes(node.id)) return "#f97316"
+            if (selectedNode?.id === node.id) return "#0ea5e9"
             if (nData?.impact_type === "TARGET") return "#a855f7"
             if (nData?.impact_type === "DIRECT") return "#0ea5e9"
             if (nData?.impact_type === "TEST") return "#f59e0b"
@@ -232,3 +260,5 @@ export const ImpactCanvas: React.FC<ImpactCanvasProps> = ({
     </div>
   )
 }
+
+export const ImpactCanvas: React.FC<ImpactCanvasProps> = props => <ReactFlowProvider><ImpactCanvasInner {...props} /></ReactFlowProvider>

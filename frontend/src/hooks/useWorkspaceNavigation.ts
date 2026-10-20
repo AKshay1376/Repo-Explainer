@@ -20,7 +20,10 @@ export function useWorkspaceNavigation(model: RepositoryModel | undefined, proje
   const navigate = useCallback((change: Partial<WorkspaceLocation>, replace = false) => {
     const previous = stateRef.current
     const current = previous.entries[previous.index]
-    const next = sanitizeLocation({ ...current, ...change }, model, allowed, fallback)
+    const base = change.view && change.view !== current.view
+      ? { ...current, story: null, step: null, presentation: false, graphMode: null, flow: null, trace: null, lifecycle: null,
+        planType: null, planTarget: null, planDestination: null } : current
+    const next = sanitizeLocation({ ...base, ...change }, model, allowed, fallback)
     if (JSON.stringify(next) === JSON.stringify(current)) return
     const entries = replace ? previous.entries.map((entry, index) => index === previous.index ? next : entry)
       : previous.entries.slice(0, previous.index + 1).concat(next)
